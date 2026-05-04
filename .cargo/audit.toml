@@ -1,0 +1,14 @@
+# cargo-audit ignore list for advisories that don't apply to oc-guardian-kit's code paths.
+# Each ignore entry MUST cite the advisory ID + a one-line reason describing why
+# the kit isn't affected. Re-evaluate annually.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2026-0097 · rand 0.8.5 unsound with custom logger using rand::rng().
+    # The kit uses rand::rngs::OsRng + RngCore::fill_bytes for operator key
+    # generation (see crates/oc-guardian-core/src/keychain.rs); we never call
+    # the global `rand::rng()` and never install a custom logger. The unsound
+    # path is structurally unreachable. Tracking; will bump to rand 0.9 once
+    # the API migration is scoped.
+    "RUSTSEC-2026-0097",
+]
