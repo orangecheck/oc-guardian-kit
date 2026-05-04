@@ -43,4 +43,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: install cargo-audit
         run: cargo install --locked cargo-audit
-      - run: cargo audit
+      # RUSTSEC-2026-0097 (rand 0.8.5 unsound with custom logger using
+      # rand::rng()) — the kit only uses rand::rngs::OsRng +
+      # RngCore::fill_bytes; the unsound path is structurally
+      # unreachable. Ignored with rationale at .cargo/audit.toml; will
+      # bump to rand 0.9 once that API migration is scoped.
+      - run: cargo audit --ignore RUSTSEC-2026-0097
