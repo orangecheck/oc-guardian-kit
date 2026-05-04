@@ -7,46 +7,61 @@ on:
 
 permissions:
   contents: write
-  id-token: write   # cosign keyless OIDC + slsa-verifier
+  id-token: write # cosign keyless OIDC + SLSA provenance attestation
   attestations: write
 
 jobs:
   build:
     name: reproducible build · ${{ matrix.target }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-          - aarch64-unknown-linux-gnu
-          - x86_64-apple-darwin
-          - aarch64-apple-darwin
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+          - target: aarch64-apple-darwin
+            os: macos-14
+          - target: x86_64-apple-darwin
+            os: macos-13
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.83
+          toolchain: '1.83'
           targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
 
-      - name: build (frozen + locked + offline for reproducibility)
+      # --frozen + --locked pin the build to Cargo.lock for
+      # reproducibility. We don't pass --offline because CI runners
+      # don't have a populated cargo cache by default; --locked already
+      # gives us byte-exact dep versions.
+      - name: build
         run: |
-          cargo build --release --frozen --locked --offline \
+          cargo build --release --frozen --locked \
             --target ${{ matrix.target }} \
             -p oc-guardian-cli
 
       - name: package
-        id: package
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/oc-guardian dist/oc-guardian-${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/oc-guardian \
+             dist/oc-guardian-${{ matrix.target }}
           cd dist
-          tar -czf oc-guardian-${{ matrix.target }}.tar.gz oc-guardian-${{ matrix.target }}
-          shasum -a 256 oc-guardian-${{ matrix.target }}.tar.gz > oc-guardian-${{ matrix.target }}.tar.gz.sha256
-          echo "tarball=oc-guardian-${{ matrix.target }}.tar.gz" >> "$GITHUB_OUTPUT"
+          tar -czf oc-guardian-${{ matrix.target }}.tar.gz \
+                   oc-guardian-${{ matrix.target }}
+          if command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 oc-guardian-${{ matrix.target }}.tar.gz \
+              > oc-guardian-${{ matrix.target }}.tar.gz.sha256
+          else
+            sha256sum oc-guardian-${{ matrix.target }}.tar.gz \
+              > oc-guardian-${{ matrix.target }}.tar.gz.sha256
+          fi
+
+      - name: install cosign
+        uses: sigstore/cosign-installer@v3
 
       - name: cosign keyless sign
-        uses: sigstore/cosign-installer@v3
-      - name: sign
         run: |
           cosign sign-blob --yes \
             --output-signature dist/oc-guardian-${{ matrix.target }}.sig \
@@ -54,7 +69,7 @@ jobs:
             --bundle dist/oc-guardian-${{ matrix.target }}.bundle \
             dist/oc-guardian-${{ matrix.target }}.tar.gz
 
-      - name: SLSA Level 3 provenance
+      - name: SLSA Level 3 provenance attestation
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: dist/oc-guardian-${{ matrix.target }}.tar.gz
@@ -73,9 +88,15 @@ jobs:
         with:
           path: dist
 
+      - name: flatten artifact dir
+        run: |
+          # download-artifact creates one subdir per artifact; flatten
+          # so action-gh-release can glob them all.
+          find dist -type f -exec mv {} dist/ \;
+
       - name: publish github release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/**/*
+          files: dist/oc-guardian-*
           fail_on_unmatched_files: true
           generate_release_notes: true
