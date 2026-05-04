@@ -12,9 +12,14 @@
 //! backed signing) is what's settled in v0.1.0 — implementation is
 //! mechanical from there.
 
+use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use anyhow::{Context, Result};
+use sha2::{Digest, Sha256};
 use tracing::info;
 
+use crate::actions::{ActionEnvelope, ActionPayload, ActionType};
 use crate::config::{
     ensure_dir, read_id, resolve_dir, write_id, write_kit_config, write_pubkey, BridgeConfig,
     KitConfig,
@@ -128,8 +133,88 @@ pub fn init(hsm: String, config_dir: Option<String>) -> Result<()> {
     Ok(())
 }
 
-pub fn apply_prepare(_out: String, _questionnaire: Option<String>, _hsm: String) -> Result<()> {
-    todo_command!("apply prepare")
+/// Produce a signed application envelope from the operator's filled-out
+/// questionnaire. Output is a JSON file the operator attaches to the
+/// email to apply@ochk.io. Bypass for portal §01 (apply).
+pub fn apply_prepare(out: String, questionnaire: Option<String>, _hsm: String) -> Result<()> {
+    // 1. Locate + hash the questionnaire.
+    let q_path =
+        questionnaire.ok_or_else(|| anyhow::anyhow!("--questionnaire <path> is required"))?;
+    let q_bytes =
+        fs::read(&q_path).with_context(|| format!("reading questionnaire at {q_path}"))?;
+    let q_sha256 = Sha256::digest(&q_bytes);
+    let q_hash_hex = hex::encode(q_sha256);
+
+    // 2. Load operator identity from config dir + keychain.
+    let dir = resolve_dir(None)?;
+    let id = read_id(&dir)?
+        .context("no operator identity in config dir — run `oc-guardian init` first")?;
+    let signer = keychain::load(&id.0)?.with_context(|| {
+        format!(
+            "operator {} has no key in the OS keychain — re-run `oc-guardian init`",
+            id.0
+        )
+    })?;
+    let pubkey: OperatorPubKey = signer.pubkey();
+
+    // 3. Build the payload. ApplicationApply payloads carry the
+    //    questionnaire hash + a small subset of the questionnaire as
+    //    params; the OC reviewer reads the full questionnaire from
+    //    the email attachment and hashes it locally to verify the
+    //    signed-over hash matches.
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock before epoch")?
+        .as_secs() as i64;
+    let payload = ActionPayload {
+        action: ActionType::ProgramApply,
+        params: serde_json::json!({
+            "operator_id": id.0,
+            "questionnaire_path": q_path,
+            "questionnaire_sha256": q_hash_hex,
+            "questionnaire_bytes": q_bytes.len(),
+            "submitted_at_unix": now_secs,
+        }),
+        nonce: 1,                           // first action under this identity
+        expires_at: now_secs + 30 * 86_400, // 30 days
+        federation: None,                   // program-level, not federation-scoped
+    };
+
+    // 4. Sign the canonical encoding.
+    let canon = serde_json::to_vec(&payload).context("serializing application payload")?;
+    let sig = signer.sign(&canon).context("signing application payload")?;
+
+    // 5. Wrap + write.
+    let envelope = ActionEnvelope {
+        payload,
+        pubkey,
+        sig_hex: hex::encode(sig),
+    };
+    let body =
+        serde_json::to_string_pretty(&envelope).context("serializing application envelope")?;
+    fs::write(&out, body).with_context(|| format!("writing {out}"))?;
+
+    println!();
+    println!("  ✓ application envelope signed and written");
+    println!();
+    println!("    operator id              {}", id.0);
+    println!("    questionnaire            {}", q_path);
+    println!("    questionnaire sha256     {}", q_hash_hex);
+    println!("    questionnaire size       {} bytes", q_bytes.len());
+    println!("    envelope                 {}", out);
+    println!();
+    println!("  next step:");
+    println!("    email apply@ochk.io with {} attached.", out);
+    println!("    subject: OC Guardian Application — <your handle>");
+    println!();
+    println!("  to verify the signature locally before sending:");
+    println!(
+        "    openssl dgst -sha256 {}    # should match questionnaire sha256 above",
+        q_path
+    );
+    println!();
+
+    Ok(())
 }
 
 pub fn apply_verify_acceptance(_file: String) -> Result<()> {

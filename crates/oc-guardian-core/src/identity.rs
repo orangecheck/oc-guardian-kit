@@ -22,13 +22,35 @@
 //! the signature returns to the kit. The private key is never
 //! materialized into kit memory.
 
-use serde::{Deserialize, Serialize};
+use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 
 /// 32-byte Ed25519 public key in raw form. We keep it as a byte
 /// array rather than a `VerifyingKey` so this struct can be cheaply
-/// serialized + persisted; verification re-imports as needed.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+/// persisted; verification re-imports as needed.
+///
+/// **Wire format:** hex-encoded 64-character string. Cleaner for
+/// humans reading envelopes and consistent with how the rest of the
+/// OC family serializes public-key bytes (see `oc-attest-protocol`
+/// envelopes). Internal Rust callers still see `[u8; 32]`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct OperatorPubKey(pub [u8; 32]);
+
+impl Serialize for OperatorPubKey {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&hex::encode(self.0))
+    }
+}
+
+impl<'de> Deserialize<'de> for OperatorPubKey {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        let bytes = hex::decode(&s).map_err(D::Error::custom)?;
+        let arr: [u8; 32] = bytes.try_into().map_err(|v: Vec<u8>| {
+            D::Error::custom(format!("expected 32 bytes, got {}", v.len()))
+        })?;
+        Ok(OperatorPubKey(arr))
+    }
+}
 
 /// Operator identifier — first 16 bytes of `sha256(pubkey)`,
 /// hex-encoded with a `op-` prefix. Stable across rotations: a key
