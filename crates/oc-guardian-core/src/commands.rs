@@ -12,8 +12,15 @@
 //! backed signing) is what's settled in v0.1.0 — implementation is
 //! mechanical from there.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use tracing::info;
+
+use crate::config::{
+    ensure_dir, read_id, resolve_dir, write_id, write_kit_config, write_pubkey, BridgeConfig,
+    KitConfig,
+};
+use crate::identity::{HsmBackend, OperatorPubKey, Signer};
+use crate::keychain;
 
 macro_rules! todo_command {
     ($name:expr) => {{
@@ -27,8 +34,98 @@ macro_rules! todo_command {
     }};
 }
 
-pub fn init(_hsm: String, _config_dir: Option<String>) -> Result<()> {
-    todo_command!("init")
+/// Generate the operator's Ed25519 identity, persist the private key
+/// to the OS keychain, write the public key + identifier + non-secret
+/// kit config to the operator's config dir.
+///
+/// Refuses to overwrite an existing identity — operators rotate via
+/// `oc-guardian portal forget` (or by deleting the keychain entry +
+/// config dir manually) and re-running `init`.
+pub fn init(hsm: String, config_dir: Option<String>) -> Result<()> {
+    let backend = HsmBackend::from_flag(&hsm)?;
+
+    // v0.1 ships only the os-keychain backend. Other --hsm values are
+    // accepted by the CLI parser so the surface is stable, but they
+    // route to OS-keychain in v0.1 with a clear note. v0.2 lights up
+    // YubiKey FIDO2 / Ledger / passkey first-class.
+    if !matches!(backend, HsmBackend::OsKeychain) {
+        info!(
+            "--hsm {hsm} requested · v0.1 ships only os-keychain. \
+             Falling back to OS keychain for now; v0.2 lights up \
+             hardware-token backends. Your operator pubkey is unchanged \
+             across the eventual rotation."
+        );
+    }
+
+    let dir = resolve_dir(config_dir.as_deref())?;
+    ensure_dir(&dir)?;
+
+    // Refuse to clobber an existing identity. If operator.id exists,
+    // we treat the config dir as already-initialized.
+    if let Some(existing) = read_id(&dir)? {
+        anyhow::bail!(
+            "operator already initialized at {} (id={}). Refusing to overwrite. \
+             To rotate, delete the keychain entry + config dir manually, then re-run \
+             `oc-guardian init`.",
+            dir.display(),
+            existing.0
+        );
+    }
+
+    // Generate + persist private key in OS keychain. Returns a signer
+    // bound to that entry; we use the signer to derive the public key
+    // for the on-disk pubkey/id files.
+    let signer = keychain::generate_and_persist().context("provisioning operator key")?;
+    let pubkey: OperatorPubKey = signer.pubkey();
+    let id = pubkey.to_id();
+
+    let pubkey_path = write_pubkey(&dir, &pubkey)?;
+    let id_path = write_id(&dir, &id)?;
+
+    let cfg = KitConfig {
+        hsm_backend: Some(format!("{hsm}")),
+        bridge: BridgeConfig::default(),
+    };
+    let kit_config_path = write_kit_config(&dir, &cfg)?;
+
+    // Operator-visible summary. The CLI's verbosity setting controls
+    // whether the tracing output is full debug or just the headline;
+    // we always print the headline so the operator knows what to do
+    // next.
+    println!();
+    println!("  ✓ operator identity provisioned");
+    println!();
+    println!("    operator id    {}", id.0);
+    println!("    pubkey         {}", hex::encode(pubkey.0));
+    println!("    config dir     {}", dir.display());
+    println!(
+        "      ├─ {}",
+        pubkey_path.file_name().unwrap().to_string_lossy()
+    );
+    println!(
+        "      ├─ {}",
+        id_path.file_name().unwrap().to_string_lossy()
+    );
+    println!(
+        "      └─ {}",
+        kit_config_path.file_name().unwrap().to_string_lossy()
+    );
+    println!();
+    println!(
+        "    private key    OS keychain · service=io.ochk.oc-guardian, account={}",
+        id.0
+    );
+    println!("    backend        {hsm}");
+    println!();
+    println!("  next steps:");
+    println!("    1. oc-guardian register --transport https     # publish your pubkey to the OC operator registry");
+    println!(
+        "    2. oc-guardian apply prepare --out application.json --questionnaire ./your-answers.md"
+    );
+    println!("    3. email apply@ochk.io with the signed envelope (see docs/application-questionnaire.md)");
+    println!();
+
+    Ok(())
 }
 
 pub fn apply_prepare(_out: String, _questionnaire: Option<String>, _hsm: String) -> Result<()> {
@@ -95,7 +192,11 @@ pub fn audit_export(_out: String) -> Result<()> {
     todo_command!("audit export")
 }
 
-pub fn exit_handoff(_federation: String, _replacement: String, _effective_date: String) -> Result<()> {
+pub fn exit_handoff(
+    _federation: String,
+    _replacement: String,
+    _effective_date: String,
+) -> Result<()> {
     todo_command!("exit-handoff")
 }
 

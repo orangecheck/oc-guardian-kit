@@ -21,6 +21,7 @@ pub mod actions;
 pub mod commands;
 pub mod config;
 pub mod identity;
+pub mod keychain;
 pub mod registry;
 
 /// Library version, populated at build time from Cargo.toml.

@@ -20,9 +20,10 @@ use tracing::info;
     version,
     about = "OC guardian operator toolkit",
     long_about = "Self-serve provisioning + operations toolkit for running an \
-                  OC-affiliated Fedimint guardian. Optional companion to \
-                  guardian.ochk.io — the kit works end-to-end without ever \
-                  touching the portal. See BYPASS.md for the canonical mapping."
+                  OC-affiliated Fedimint guardian. Optional companion to the \
+                  operator portal at me.ochk.io/operator — the kit works \
+                  end-to-end without ever touching the portal. See BYPASS.md \
+                  for the canonical mapping."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -154,9 +155,7 @@ enum FederationsCommand {
         transport: String,
     },
     /// Coordinate exit from a federation.
-    Leave {
-        slug: String,
-    },
+    Leave { slug: String },
 }
 
 #[derive(Subcommand)]
@@ -290,9 +289,11 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Init(args) => oc_guardian_core::commands::init(args.hsm, args.config_dir),
         Command::Apply(cmd) => match cmd {
-            ApplyCommand::Prepare { out, questionnaire, hsm } => {
-                oc_guardian_core::commands::apply_prepare(out, questionnaire, hsm)
-            }
+            ApplyCommand::Prepare {
+                out,
+                questionnaire,
+                hsm,
+            } => oc_guardian_core::commands::apply_prepare(out, questionnaire, hsm),
             ApplyCommand::VerifyAcceptance { file } => {
                 oc_guardian_core::commands::apply_verify_acceptance(file)
             }
@@ -303,7 +304,9 @@ fn main() -> Result<()> {
             FederationsCommand::Join { slug, transport } => {
                 oc_guardian_core::commands::federations_join(slug, transport)
             }
-            FederationsCommand::Leave { slug } => oc_guardian_core::commands::federations_leave(slug),
+            FederationsCommand::Leave { slug } => {
+                oc_guardian_core::commands::federations_leave(slug)
+            }
         },
         Command::Ceremony(cmd) => match cmd {
             CeremonyCommand::Start { peers, setup_code } => {
@@ -315,7 +318,9 @@ fn main() -> Result<()> {
         Command::Charter(cmd) => match cmd {
             CharterCommand::Fetch { slug } => oc_guardian_charter::fetch(slug),
             CharterCommand::Sign { file, hsm } => oc_guardian_charter::sign(file, hsm),
-            CharterCommand::Publish { file, transport } => oc_guardian_charter::publish(file, transport),
+            CharterCommand::Publish { file, transport } => {
+                oc_guardian_charter::publish(file, transport)
+            }
         },
         Command::Fedimintd(cmd) => match cmd {
             FedimintdCommand::Install { version } => oc_guardian_fedimint::install(version),
@@ -327,9 +332,11 @@ fn main() -> Result<()> {
             AlertsCommand::Subscribe { federation } => {
                 oc_guardian_core::commands::alerts_subscribe(federation)
             }
-            AlertsCommand::Post { federation, severity, body } => {
-                oc_guardian_core::commands::alerts_post(federation, severity, body)
-            }
+            AlertsCommand::Post {
+                federation,
+                severity,
+                body,
+            } => oc_guardian_core::commands::alerts_post(federation, severity, body),
         },
         Command::Payouts(cmd) => match cmd {
             PayoutsCommand::List { federation } => {
@@ -371,8 +378,10 @@ fn init_tracing(verbosity: u8) {
         _ => "trace",
     };
     let _ = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(level)))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(level)),
+        )
         .with_target(false)
         .try_init();
 }

@@ -27,6 +27,8 @@ pub fn sign(file: String, hsm: String) -> Result<()> {
 }
 
 pub fn publish(file: String, transport: String) -> Result<()> {
-    info!("charter publish ({file}, transport={transport}): stub — v0.2.0 broadcasts the signature");
+    info!(
+        "charter publish ({file}, transport={transport}): stub — v0.2.0 broadcasts the signature"
+    );
     Ok(())
 }
