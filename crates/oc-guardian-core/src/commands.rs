@@ -21,8 +21,8 @@ use tracing::info;
 
 use crate::actions::{ActionEnvelope, ActionPayload, ActionType};
 use crate::config::{
-    ensure_dir, read_id, resolve_dir, write_id, write_kit_config, write_pubkey, BridgeConfig,
-    KitConfig,
+    ensure_dir, read_id, read_kit_config, resolve_dir, write_id, write_kit_config, write_pubkey,
+    BridgeConfig, KitConfig,
 };
 use crate::identity::{HsmBackend, OperatorPubKey, Signer};
 use crate::keychain;
@@ -249,8 +249,89 @@ pub fn ceremony_finalize() -> Result<()> {
     todo_command!("ceremony finalize")
 }
 
+/// Report the operator's local state — identity, config dir, keychain
+/// presence, kit version, bridge configuration. Purely local; no
+/// network. Useful before signing anything to confirm the kit is
+/// reading the operator the operator expects.
 pub fn status() -> Result<()> {
-    todo_command!("status")
+    let dir = resolve_dir(None)?;
+
+    println!();
+    println!("  oc-guardian-kit v{}", crate::VERSION);
+    println!();
+    println!("  config dir       {}", dir.display());
+
+    let id = match read_id(&dir)? {
+        Some(id) => id,
+        None => {
+            println!();
+            println!("  status           NOT INITIALIZED");
+            println!();
+            println!("  no operator identity found at this config dir.");
+            println!("  run `oc-guardian init` to provision one.");
+            println!();
+            return Ok(());
+        }
+    };
+
+    println!("  operator id      {}", id.0);
+
+    // Try to load the keychain entry to confirm the private key is
+    // reachable. We don't sign anything — just verify the entry
+    // exists.
+    let key_present = match keychain::load(&id.0) {
+        Ok(Some(_)) => true,
+        Ok(None) => false,
+        Err(err) => {
+            println!("  keychain         ERROR · {err}");
+            anyhow::bail!("keychain access failed");
+        }
+    };
+
+    let pubkey_path = dir.join("operator.pub");
+    let pubkey_hex = std::fs::read_to_string(&pubkey_path)
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| "<missing>".to_string());
+    println!("  pubkey           {pubkey_hex}");
+
+    let kit_cfg = read_kit_config(&dir)?.unwrap_or_default();
+    println!(
+        "  hsm backend      {}",
+        kit_cfg.hsm_backend.as_deref().unwrap_or("(not recorded)")
+    );
+    println!(
+        "  bridge           {}{}",
+        if kit_cfg.bridge.enabled {
+            "enabled"
+        } else {
+            "disabled (default)"
+        },
+        if kit_cfg.bridge.allowed_actions.is_empty() {
+            "".to_string()
+        } else {
+            format!(
+                " · allowlist: {}",
+                kit_cfg.bridge.allowed_actions.join(", ")
+            )
+        }
+    );
+    println!(
+        "  private key      {}",
+        if key_present {
+            "OS keychain · reachable"
+        } else {
+            "OS keychain · MISSING (rotation needed)"
+        }
+    );
+    println!();
+    if !key_present {
+        println!("  ! operator.id is on disk but no key in the OS keychain.");
+        println!("    Either the keychain entry was deleted out-of-band, or the");
+        println!("    config dir was copied from another machine. Re-run");
+        println!("    `oc-guardian init` after manually clearing this config dir.");
+        println!();
+    }
+    Ok(())
 }
 
 pub fn alerts_subscribe(_federation: String) -> Result<()> {
