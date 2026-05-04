@@ -19,6 +19,7 @@
 
 pub mod actions;
 pub mod commands;
+pub mod config;
 pub mod identity;
 pub mod registry;
 
