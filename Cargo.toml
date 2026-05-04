@@ -15,7 +15,7 @@ rust-version = "1.85"
 authors = ["OrangeCheck"]
 license = "MIT"
 repository = "https://github.com/orangecheck/oc-guardian-kit"
-homepage = "https://guardian.ochk.io"
+homepage = "https://me.ochk.io/operator"
 
 [workspace.dependencies]
 # Pinned for reproducible builds. Bump deliberately.
@@ -30,7 +30,7 @@ sha2 = "=0.10.8"
 thiserror = "=2.0.9"
 tokio = { version = "=1.44.2", features = ["full"] }
 tracing = "=0.1.41"
-tracing-subscriber = { version = "=0.3.19", features = ["env-filter"] }
+tracing-subscriber = { version = "=0.3.20", features = ["env-filter"] }
 
 # Workspace-internal
 oc-guardian-core = { path = "crates/oc-guardian-core" }
