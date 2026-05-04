@@ -88,7 +88,7 @@ pub fn init(hsm: String, config_dir: Option<String>) -> Result<()> {
     let id_path = write_id(&dir, &id)?;
 
     let cfg = KitConfig {
-        hsm_backend: Some(format!("{hsm}")),
+        hsm_backend: Some(hsm.to_string()),
         bridge: BridgeConfig::default(),
     };
     let kit_config_path = write_kit_config(&dir, &cfg)?;
