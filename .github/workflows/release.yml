@@ -42,13 +42,13 @@ jobs:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
 
-      # --frozen + --locked pin the build to Cargo.lock for
-      # reproducibility. We don't pass --offline because CI runners
-      # don't have a populated cargo cache by default; --locked already
-      # gives us byte-exact dep versions.
+      # --locked pins the build to Cargo.lock for byte-exact dep
+      # versions — same reproducibility guarantee as --frozen, but
+      # without the --offline implication (--frozen = --locked +
+      # --offline; CI runners don't have a populated cargo cache).
       - name: build
         run: |
-          cargo build --release --frozen --locked \
+          cargo build --release --locked \
             --target ${{ matrix.target }} \
             -p oc-guardian-cli
 
