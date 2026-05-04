@@ -48,14 +48,18 @@ pub enum ActionType {
     BridgeCommand,
 }
 
-/// Outer envelope. Receivers verify `sig` against `pubkey` over the
-/// CBOR canonical encoding of `payload`.
+/// Outer envelope. Receivers verify `sig_hex` against `pubkey` over
+/// the CBOR canonical encoding of `payload`.
+///
+/// Hex-encoded signature is on the wire so envelopes survive JSON
+/// transports, copy-paste, and human review without base64 ambiguity.
+/// 128 hex chars = 64 raw bytes for Ed25519.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ActionEnvelope {
     pub payload: ActionPayload,
     pub pubkey: OperatorPubKey,
-    /// 64-byte Ed25519 signature.
-    pub sig: [u8; 64],
+    /// Hex-encoded 64-byte Ed25519 signature.
+    pub sig_hex: String,
 }
 
 /// Inner signed payload. `params` is action-type-specific JSON; the
