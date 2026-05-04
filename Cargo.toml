@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/oc-guardian-cli",
+    "crates/oc-guardian-core",
+    "crates/oc-guardian-fedimint",
+    "crates/oc-guardian-charter",
+    "crates/oc-guardian-portal-bridge",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.83"
+authors = ["OrangeCheck"]
+license = "MIT"
+repository = "https://github.com/orangecheck/oc-guardian-kit"
+homepage = "https://guardian.ochk.io"
+
+[workspace.dependencies]
+# Pinned for reproducible builds. Bump deliberately.
+anyhow = "=1.0.95"
+clap = { version = "=4.5.23", features = ["derive", "env"] }
+ed25519-dalek = "=2.1.1"
+hex = "=0.4.3"
+rand = "=0.8.5"
+serde = { version = "=1.0.217", features = ["derive"] }
+serde_json = "=1.0.134"
+sha2 = "=0.10.8"
+thiserror = "=2.0.9"
+tokio = { version = "=1.42.0", features = ["full"] }
+tracing = "=0.1.41"
+tracing-subscriber = { version = "=0.3.19", features = ["env-filter"] }
+
+# Workspace-internal
+oc-guardian-core = { path = "crates/oc-guardian-core" }
+oc-guardian-fedimint = { path = "crates/oc-guardian-fedimint" }
+oc-guardian-charter = { path = "crates/oc-guardian-charter" }
+oc-guardian-portal-bridge = { path = "crates/oc-guardian-portal-bridge" }
+
+[profile.release]
+# Reproducible-build friendly: no per-host non-determinism, optimize for
+# binary verification rather than fastest possible build.
+codegen-units = 1
+lto = "fat"
+strip = "symbols"
+panic = "abort"
+opt-level = 3

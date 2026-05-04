@@ -1,0 +1,14 @@
+[package]
+name = "oc-guardian-fedimint"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "fedimintd binary lifecycle management for the OC guardian kit (download, verify, run)."
+
+[dependencies]
+anyhow.workspace = true
+tracing.workspace = true

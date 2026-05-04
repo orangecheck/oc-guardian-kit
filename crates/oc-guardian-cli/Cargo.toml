@@ -1,0 +1,27 @@
+[package]
+name = "oc-guardian-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Self-serve provisioning + operations toolkit for OC-affiliated Fedimint guardians."
+
+[[bin]]
+name = "oc-guardian"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+oc-guardian-charter.workspace = true
+oc-guardian-core.workspace = true
+oc-guardian-fedimint.workspace = true
+oc-guardian-portal-bridge.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

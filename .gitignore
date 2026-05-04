@@ -1,0 +1,16 @@
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# Operator-local state — never commit
+.config/
+.local/
+*.priv
+operator.priv
+*.identity.priv
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

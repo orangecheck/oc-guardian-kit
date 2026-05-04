@@ -1,0 +1,14 @@
+[package]
+name = "oc-guardian-portal-bridge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Optional bridge: receives signed action requests from the OC operator portal, presents them to the operator's hardware key for authorization, applies them. The kit works without it."
+
+[dependencies]
+anyhow.workspace = true
+tracing.workspace = true
