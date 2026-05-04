@@ -14,6 +14,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+      - name: install system deps
+        # libdbus-1-dev: required by the keyring crate's
+        # sync-secret-service feature (Linux keyring backend
+        # under libsecret/gnome-keyring/KWallet).
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
       - name: install rust toolchain (pinned)
         uses: dtolnay/rust-toolchain@stable
         with:

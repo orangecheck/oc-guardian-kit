@@ -26,6 +26,16 @@ jobs:
             os: macos-13
     steps:
       - uses: actions/checkout@v5
+      - name: install linux deps
+        if: runner.os == 'Linux'
+        # libdbus-1-dev is required by the keyring crate's
+        # sync-secret-service feature (Linux keyring backend
+        # under libsecret/gnome-keyring/KWallet). macOS keychain
+        # + Windows Credential Vault use OS-native APIs and
+        # need no system deps.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.85'
