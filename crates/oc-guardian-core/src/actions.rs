@@ -79,6 +79,98 @@ pub struct ActionPayload {
     pub federation: Option<String>,
 }
 
+/// Reviewer-issued acceptance envelope. Asymmetric counterpart to
+/// `ActionEnvelope` — sent in the OC→operator direction (an applicant
+/// receives this in reply to a successful program-apply submission).
+/// The reviewer signs over `serde_json::to_vec(&payload)` with their
+/// Ed25519 key; the kit verifies against the public key published at
+/// `me.ochk.io/.well-known/oc-operator-reviewer.json` (or against a
+/// pinned `--reviewer-pubkey-hex` flag for fully-offline verification).
+///
+/// Field order in `AcceptancePayload` is load-bearing — it must match
+/// the TypeScript signer's `reencodePayload` ordering exactly, since
+/// signature verification depends on byte-identical canonicalization.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AcceptanceEnvelope {
+    pub payload: AcceptancePayload,
+    pub reviewer_kid: String,
+    /// Hex-encoded 64-byte Ed25519 signature.
+    pub sig_hex: String,
+}
+
+/// Inner signed payload. Mirrors `src/lib/operator/acceptance.ts` in
+/// `oc-me-web` field-for-field, in field-declaration order.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AcceptancePayload {
+    /// Always the literal `"program-accept"`.
+    pub action: String,
+    pub application_id: String,
+    pub operator_id: String,
+    /// Hex of the operator's Ed25519 public key (32 bytes = 64 hex).
+    /// The applicant verifies this matches their local pubkey before
+    /// trusting the acceptance.
+    pub operator_pubkey: String,
+    pub accepted_at_unix: i64,
+    pub reviewer_note: Option<String>,
+    pub federation_slug: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
+
+    /// AcceptancePayload field order is load-bearing — me-web's
+    /// `reencodePayload` re-builds the payload object in this exact
+    /// order before signing. If field order drifts here, every
+    /// existing acceptance envelope stops verifying.
+    #[test]
+    fn acceptance_payload_serializes_in_field_declaration_order() {
+        let p = AcceptancePayload {
+            action: "program-accept".into(),
+            application_id: "app_x".into(),
+            operator_id: "op-aa".into(),
+            operator_pubkey: "bb".into(),
+            accepted_at_unix: 1714867200,
+            reviewer_note: Some("ok".into()),
+            federation_slug: Some("oc-me-v1".into()),
+        };
+        let json = serde_json::to_string(&p).unwrap();
+        assert_eq!(
+            json,
+            r#"{"action":"program-accept","application_id":"app_x","operator_id":"op-aa","operator_pubkey":"bb","accepted_at_unix":1714867200,"reviewer_note":"ok","federation_slug":"oc-me-v1"}"#
+        );
+    }
+
+    #[test]
+    fn acceptance_envelope_round_trips_under_ed25519() {
+        // Reviewer key.
+        let signing_key = SigningKey::from_bytes(&[7u8; 32]);
+        let verifying_key: VerifyingKey = signing_key.verifying_key();
+
+        let payload = AcceptancePayload {
+            action: "program-accept".into(),
+            application_id: "app_round".into(),
+            operator_id: "op-ff".into(),
+            operator_pubkey: "ee".into(),
+            accepted_at_unix: 1714867200,
+            reviewer_note: None,
+            federation_slug: Some("oc-me-v1".into()),
+        };
+        let canon = serde_json::to_vec(&payload).unwrap();
+        let sig = signing_key.sign(&canon);
+
+        // Verify against the canonical encoding.
+        verifying_key.verify(&canon, &sig).unwrap();
+
+        // Tamper detection.
+        let mut tampered = payload.clone();
+        tampered.reviewer_note = Some("after-the-fact note".into());
+        let canon2 = serde_json::to_vec(&tampered).unwrap();
+        assert!(verifying_key.verify(&canon2, &sig).is_err());
+    }
+}
+
 /// Verification error categories. Returned by receivers; surfaced to
 /// the operator as actionable diagnostics.
 #[derive(Debug, thiserror::Error)]

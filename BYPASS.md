@@ -45,7 +45,18 @@ Every row here is a portal route the operator might land on, paired with the kit
 
 3. Email `apply@ochk.io` with the signed envelope as an attachment. Subject line: `OC Guardian Application — <your handle>`.
 
-4. The OC reviewer team verifies your envelope's signature offline, runs the same vetting as the portal-mediated path, and replies via email with an acceptance envelope you can verify with `oc-guardian apply verify-acceptance --file acceptance.json`.
+4. The OC reviewer team verifies your envelope's signature offline, runs the same vetting as the portal-mediated path, and replies via email with a reviewer-signed acceptance envelope (`acceptance-app_….json`). Verify it locally before trusting the email body:
+
+   ```sh
+   # one-time: pin the reviewer's public key from the JWKS endpoint
+   curl -s https://me.ochk.io/.well-known/oc-operator-reviewer.json | jq
+
+   oc-guardian apply verify-acceptance \
+     --file acceptance-app_<your-id>.json \
+     --reviewer-pubkey-hex <pinned-hex>
+   ```
+
+   A green check confirms the email genuinely came from OC; an unverified envelope means do not act on it.
 
 The data flowing through this path is byte-for-byte identical to what the portal would have submitted. The portal is a UI; the email channel is the same protocol carried over a different transport.
 

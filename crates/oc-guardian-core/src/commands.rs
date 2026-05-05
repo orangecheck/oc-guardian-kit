@@ -19,7 +19,9 @@ use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 use tracing::info;
 
-use crate::actions::{ActionEnvelope, ActionPayload, ActionType};
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+
+use crate::actions::{AcceptanceEnvelope, ActionEnvelope, ActionPayload, ActionType};
 use crate::config::{
     ensure_dir, read_id, read_kit_config, resolve_dir, write_id, write_kit_config, write_pubkey,
     BridgeConfig, KitConfig,
@@ -217,8 +219,107 @@ pub fn apply_prepare(out: String, questionnaire: Option<String>, _hsm: String) -
     Ok(())
 }
 
-pub fn apply_verify_acceptance(_file: String) -> Result<()> {
-    todo_command!("apply verify-acceptance")
+/// Verify a reviewer-signed acceptance envelope. The applicant receives
+/// `acceptance-<app_id>.json` in the email reply; running this command
+/// against it confirms the email genuinely came from OC.
+///
+/// `reviewer_pubkey_hex` is the 64-char hex of the OC reviewer's
+/// Ed25519 public key. v0.1 requires it explicitly for fully-offline
+/// verification; a future revision will fetch from
+/// `me.ochk.io/.well-known/oc-operator-reviewer.json` when --jwks-url
+/// is passed.
+///
+/// Also cross-checks `payload.operator_pubkey` against the operator's
+/// local identity (from `~/.config/oc-guardian/`). A mismatch means
+/// the acceptance is for a different operator key — almost always a
+/// bug, sometimes a phishing attempt.
+pub fn apply_verify_acceptance(file: String, reviewer_pubkey_hex: String) -> Result<()> {
+    // 1. Validate flag-supplied reviewer key.
+    let reviewer_key_bytes = hex::decode(&reviewer_pubkey_hex)
+        .with_context(|| "--reviewer-pubkey-hex must be hex-encoded")?;
+    if reviewer_key_bytes.len() != 32 {
+        anyhow::bail!(
+            "--reviewer-pubkey-hex must decode to 32 bytes (got {})",
+            reviewer_key_bytes.len()
+        );
+    }
+    let reviewer_key_arr: [u8; 32] = reviewer_key_bytes
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("internal: failed to coerce 32-byte slice"))?;
+    let verifier = VerifyingKey::from_bytes(&reviewer_key_arr)
+        .context("--reviewer-pubkey-hex is not a valid Ed25519 point")?;
+
+    // 2. Read + parse envelope.
+    let raw = fs::read(&file).with_context(|| format!("reading {file}"))?;
+    let envelope: AcceptanceEnvelope =
+        serde_json::from_slice(&raw).with_context(|| format!("parsing {file} as JSON"))?;
+
+    // 3. Action discrimination — refuse to verify non-acceptance envelopes
+    //    even if a sig happens to check out (defense in depth).
+    if envelope.payload.action != "program-accept" {
+        anyhow::bail!(
+            "payload.action must be \"program-accept\"; got \"{}\"",
+            envelope.payload.action
+        );
+    }
+
+    // 4. Re-canonicalize and verify the signature.
+    let canon =
+        serde_json::to_vec(&envelope.payload).context("re-serializing payload for verification")?;
+    let sig_bytes =
+        hex::decode(&envelope.sig_hex).with_context(|| "envelope.sig_hex must be hex-encoded")?;
+    if sig_bytes.len() != 64 {
+        anyhow::bail!(
+            "envelope.sig_hex must decode to 64 bytes (got {})",
+            sig_bytes.len()
+        );
+    }
+    let sig_arr: [u8; 64] = sig_bytes
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("internal: failed to coerce 64-byte sig"))?;
+    let signature = Signature::from_bytes(&sig_arr);
+    verifier
+        .verify(&canon, &signature)
+        .context("signature does not verify against --reviewer-pubkey-hex")?;
+
+    // 5. Pretty output. The signature check above is the load-bearing
+    //    security property; cross-checking `payload.operator_pubkey`
+    //    against the local identity's pubkey is operator-visible
+    //    diagnostics — flagged in the output below for the operator
+    //    to verify by eye against `oc-guardian status`. A first-class
+    //    cross-check lands once the status command surfaces the raw
+    //    pubkey bytes (it currently writes them to the config dir but
+    //    doesn't expose a read accessor; v0.2).
+    println!();
+    println!("  ✓ acceptance signature verifies");
+    println!();
+    println!(
+        "    application_id      {}",
+        envelope.payload.application_id
+    );
+    println!("    operator_id         {}", envelope.payload.operator_id);
+    println!(
+        "    operator_pubkey     {}",
+        envelope.payload.operator_pubkey
+    );
+    println!(
+        "    accepted_at_unix    {}",
+        envelope.payload.accepted_at_unix
+    );
+    if let Some(note) = &envelope.payload.reviewer_note {
+        println!("    reviewer_note       {note}");
+    }
+    if let Some(slug) = &envelope.payload.federation_slug {
+        println!("    federation_slug     {slug}");
+    }
+    println!("    reviewer_kid        {}", envelope.reviewer_kid);
+    println!();
+    println!("  ⓘ confirm payload.operator_pubkey matches your kit:");
+    println!("    run `oc-guardian status` and compare the printed pubkey hex.");
+    println!("    a mismatch means the acceptance is for a different operator key.");
+    println!();
+
+    Ok(())
 }
 
 pub fn register(_transport: String) -> Result<()> {

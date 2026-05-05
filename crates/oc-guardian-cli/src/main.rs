@@ -130,10 +130,24 @@ enum ApplyCommand {
         #[arg(long, default_value = "os-keychain")]
         hsm: String,
     },
-    /// Verify an acceptance envelope returned by the OC reviewer team.
+    /// Verify a reviewer-signed acceptance envelope returned by OC.
+    /// Confirms the email reply genuinely came from us — the kit
+    /// reproduces the canonical encoding the reviewer signed over and
+    /// checks the Ed25519 signature against the public key you pin
+    /// with `--reviewer-pubkey-hex`. The hex form is published at
+    /// `https://me.ochk.io/.well-known/oc-operator-reviewer.json`
+    /// (the `keys[0].x` field, base64url-decoded then hex-encoded);
+    /// re-pin and re-verify on every key rotation.
     VerifyAcceptance {
+        /// Path to the acceptance envelope JSON (e.g. the
+        /// `acceptance-app_….json` attached to the reviewer's email).
         #[arg(long)]
         file: String,
+        /// Hex of the OC reviewer's Ed25519 public key (32 bytes =
+        /// 64 hex chars). Pull from /.well-known/oc-operator-reviewer
+        /// and pin locally; rotate when the published `kid` changes.
+        #[arg(long, env = "OC_REVIEWER_PUBKEY_HEX")]
+        reviewer_pubkey_hex: String,
     },
 }
 
@@ -294,9 +308,10 @@ fn main() -> Result<()> {
                 questionnaire,
                 hsm,
             } => oc_guardian_core::commands::apply_prepare(out, questionnaire, hsm),
-            ApplyCommand::VerifyAcceptance { file } => {
-                oc_guardian_core::commands::apply_verify_acceptance(file)
-            }
+            ApplyCommand::VerifyAcceptance {
+                file,
+                reviewer_pubkey_hex,
+            } => oc_guardian_core::commands::apply_verify_acceptance(file, reviewer_pubkey_hex),
         },
         Command::Register(args) => oc_guardian_core::commands::register(args.transport),
         Command::Federations(cmd) => match cmd {
