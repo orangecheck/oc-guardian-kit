@@ -34,10 +34,20 @@ surface (CLI flags, action-envelope schemas, file paths under
   `acceptance_envelope_round_trips_under_ed25519`. Match the TS-side
   cases at `src/__tests__/lib/operator-acceptance.test.ts`.
 
+### Hardened
+
+- **`apply prepare`** now self-verifies the signature it just produced
+  against the operator's own pubkey before writing the envelope to
+  disk. Catches keychain-rotation races and any signing-pipeline bug
+  before the operator emails an unverifiable `application.json`. The
+  check uses the same Ed25519 verifier the OC reviewer team would
+  run; if it fails locally, the kit refuses to write the file.
+
 ### Documentation
 
 - `BYPASS.md` §01 now shows the real `apply verify-acceptance` recipe
   with the JWKS fetch URL (instead of pointing at the stub).
+- `CHANGELOG.md` added (this file).
 
 ## v0.1.0 — 2026-05-04
 

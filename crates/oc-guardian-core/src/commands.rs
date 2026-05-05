@@ -186,6 +186,22 @@ pub fn apply_prepare(out: String, questionnaire: Option<String>, _hsm: String) -
     let canon = serde_json::to_vec(&payload).context("serializing application payload")?;
     let sig = signer.sign(&canon).context("signing application payload")?;
 
+    // 4b. Defense-in-depth · re-verify the signature we just produced
+    //     against the operator's own pubkey before claiming success.
+    //     Catches any keychain-rotation or signing-pipeline bug before
+    //     the operator emails an unverifiable envelope.
+    {
+        let verifier = ed25519_dalek::VerifyingKey::from_bytes(&pubkey.0)
+            .context("internal: operator pubkey is not a valid Ed25519 point")?;
+        let sig_for_verify = ed25519_dalek::Signature::from_bytes(&sig);
+        ed25519_dalek::Verifier::verify(&verifier, &canon, &sig_for_verify).context(
+            "self-verify failed · the signature we just produced does not check out \
+             against the operator's own pubkey. This is a kit bug or a keychain-rotation \
+             race; do NOT email the resulting file. Re-run after `oc-guardian status` \
+             confirms the keychain entry is reachable.",
+        )?;
+    }
+
     // 5. Wrap + write.
     let envelope = ActionEnvelope {
         payload,
