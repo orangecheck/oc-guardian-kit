@@ -115,3 +115,102 @@ pub struct InitOutcome {
     pub pubkey_hex: String,
     pub hsm_backend: HsmBackend,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp_dir(name: &str) -> PathBuf {
+        let p =
+            std::env::temp_dir().join(format!("oc-guardian-test-{}-{name}", std::process::id()));
+        let _ = fs::remove_dir_all(&p);
+        p
+    }
+
+    #[test]
+    fn ensure_dir_creates_when_missing() {
+        let p = tmp_dir("ensure-nested").join("a/b/c");
+        assert!(!p.exists());
+        ensure_dir(&p).unwrap();
+        assert!(p.exists());
+        // Idempotent · second call is a no-op.
+        ensure_dir(&p).unwrap();
+        let _ = fs::remove_dir_all(p.parent().unwrap().parent().unwrap().parent().unwrap());
+    }
+
+    #[test]
+    fn pubkey_file_round_trips() {
+        let dir = tmp_dir("pubkey");
+        ensure_dir(&dir).unwrap();
+        let pk = OperatorPubKey([0x42; 32]);
+        let path = write_pubkey(&dir, &pk).unwrap();
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content.trim(), hex::encode([0x42u8; 32]));
+        assert!(content.ends_with('\n'), "should be newline-terminated");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn id_file_round_trips() {
+        let dir = tmp_dir("id");
+        ensure_dir(&dir).unwrap();
+        let id = OperatorId("op-deadbeef0123abcd".to_string());
+        write_id(&dir, &id).unwrap();
+        let parsed = read_id(&dir).unwrap().expect("should be Some");
+        assert_eq!(parsed, id);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_id_returns_none_when_absent() {
+        let dir = tmp_dir("no-id");
+        ensure_dir(&dir).unwrap();
+        let parsed = read_id(&dir).unwrap();
+        assert!(parsed.is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn kit_config_round_trips() {
+        let dir = tmp_dir("kit");
+        ensure_dir(&dir).unwrap();
+        let cfg = KitConfig {
+            hsm_backend: Some("yubikey".into()),
+            bridge: BridgeConfig {
+                enabled: true,
+                allowed_actions: vec!["charter-sign".into(), "alert-publish".into()],
+            },
+        };
+        write_kit_config(&dir, &cfg).unwrap();
+        let parsed = read_kit_config(&dir).unwrap().expect("should be Some");
+        assert_eq!(parsed.hsm_backend, Some("yubikey".to_string()));
+        assert!(parsed.bridge.enabled);
+        assert_eq!(parsed.bridge.allowed_actions.len(), 2);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_kit_config_returns_none_when_absent() {
+        let dir = tmp_dir("no-kit");
+        ensure_dir(&dir).unwrap();
+        let parsed = read_kit_config(&dir).unwrap();
+        assert!(parsed.is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_dir_honors_explicit_override() {
+        let p = resolve_dir(Some("/tmp/forced-path")).unwrap();
+        assert_eq!(p, PathBuf::from("/tmp/forced-path"));
+    }
+
+    #[test]
+    fn resolve_dir_appends_oc_guardian_to_platform_default() {
+        let p = resolve_dir(None).unwrap();
+        assert!(
+            p.ends_with("oc-guardian"),
+            "expected platform default to end in oc-guardian, got {}",
+            p.display()
+        );
+    }
+}

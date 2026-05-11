@@ -169,6 +169,189 @@ mod tests {
         let canon2 = serde_json::to_vec(&tampered).unwrap();
         assert!(verifying_key.verify(&canon2, &sig).is_err());
     }
+
+    // ── ActionPayload (operator → portal / federation) ──────────
+
+    /// ActionPayload field order is the symmetric load-bearing one —
+    /// the operator signs over the canonical serialization of this
+    /// struct; the federation re-derives the same canonicalization
+    /// to verify. Any reorder breaks every previously-signed
+    /// envelope on first ratification attempt.
+    #[test]
+    fn action_payload_serializes_in_field_declaration_order() {
+        // Use an empty params object so the substring search for
+        // top-level keys doesn't false-match against nested keys
+        // inside params (e.g. params: {"federation": "..."} would
+        // make `"federation"` appear before the top-level field).
+        let p = ActionPayload {
+            action: ActionType::FederationJoin,
+            params: serde_json::json!({}),
+            nonce: 42,
+            expires_at: 1714867200,
+            federation: Some("oc-me-v1".into()),
+        };
+        let json = serde_json::to_string(&p).unwrap();
+        // action serializes kebab-case (rename_all on the enum).
+        assert!(
+            json.starts_with(r#"{"action":"federation-join","params":{}"#),
+            "got: {json}"
+        );
+        // Field order: action, params, nonce, expires_at, federation.
+        let expected_keys = ["action", "params", "nonce", "expires_at", "federation"];
+        let mut positions: Vec<(usize, &str)> = expected_keys
+            .iter()
+            .filter_map(|k| json.find(&format!("\"{k}\"")).map(|i| (i, *k)))
+            .collect();
+        positions.sort_by_key(|(i, _)| *i);
+        let order: Vec<&str> = positions.iter().map(|(_, k)| *k).collect();
+        assert_eq!(
+            order,
+            expected_keys.to_vec(),
+            "field order drifted · got {order:?}"
+        );
+    }
+
+    #[test]
+    fn action_envelope_round_trips_under_operator_key() {
+        let signing_key = SigningKey::from_bytes(&[9u8; 32]);
+        let verifying_key: VerifyingKey = signing_key.verifying_key();
+        let pubkey = OperatorPubKey(*verifying_key.as_bytes());
+
+        let payload = ActionPayload {
+            action: ActionType::CharterSign,
+            params: serde_json::json!({"charter_hash": "deadbeef"}),
+            nonce: 1,
+            expires_at: 1714867200,
+            federation: Some("oc-me-v1".into()),
+        };
+        let canon = serde_json::to_vec(&payload).unwrap();
+        let sig = signing_key.sign(&canon);
+        let envelope = ActionEnvelope {
+            payload: payload.clone(),
+            pubkey,
+            sig_hex: hex::encode(sig.to_bytes()),
+        };
+
+        // Receiver-side verify path: re-canonicalize, hex-decode sig,
+        // verify against the envelope's pubkey.
+        let recanon = serde_json::to_vec(&envelope.payload).unwrap();
+        let sig_bytes: [u8; 64] = hex::decode(&envelope.sig_hex).unwrap().try_into().unwrap();
+        let recovered_sig = ed25519_dalek::Signature::from_bytes(&sig_bytes);
+        let recovered_pub = VerifyingKey::from_bytes(&envelope.pubkey.0).unwrap();
+        recovered_pub.verify(&recanon, &recovered_sig).unwrap();
+    }
+
+    #[test]
+    fn action_envelope_tamper_on_payload_breaks_verify() {
+        let signing_key = SigningKey::from_bytes(&[9u8; 32]);
+        let verifying_key: VerifyingKey = signing_key.verifying_key();
+
+        let payload = ActionPayload {
+            action: ActionType::PayoutsClaim,
+            params: serde_json::json!({"destination": "bc1qoriginal"}),
+            nonce: 7,
+            expires_at: 1714867200,
+            federation: None,
+        };
+        let canon = serde_json::to_vec(&payload).unwrap();
+        let sig = signing_key.sign(&canon);
+
+        // Tamper · swap destination.
+        let mut tampered = payload.clone();
+        tampered.params = serde_json::json!({"destination": "bc1qattacker"});
+        let recanon = serde_json::to_vec(&tampered).unwrap();
+        assert!(
+            verifying_key.verify(&recanon, &sig).is_err(),
+            "tampered payload must NOT verify against the original signature"
+        );
+    }
+
+    #[test]
+    fn action_envelope_tamper_on_nonce_breaks_verify() {
+        // Replay-protection invariant: the nonce is inside the signed
+        // bytes. Bumping it after sign-time must invalidate the sig.
+        let signing_key = SigningKey::from_bytes(&[9u8; 32]);
+        let verifying_key: VerifyingKey = signing_key.verifying_key();
+
+        let payload = ActionPayload {
+            action: ActionType::AlertPublish,
+            params: serde_json::json!({}),
+            nonce: 1,
+            expires_at: 1714867200,
+            federation: Some("oc-me-v1".into()),
+        };
+        let canon = serde_json::to_vec(&payload).unwrap();
+        let sig = signing_key.sign(&canon);
+
+        let mut replay = payload.clone();
+        replay.nonce = 2;
+        let recanon = serde_json::to_vec(&replay).unwrap();
+        assert!(
+            verifying_key.verify(&recanon, &sig).is_err(),
+            "nonce-replay attempt must NOT verify against the original signature"
+        );
+    }
+
+    #[test]
+    fn action_type_serializes_kebab_case() {
+        // The wire format is consumed by me-web's API handlers, which
+        // expect kebab-case. Any rename here ripples to the server.
+        assert_eq!(
+            serde_json::to_string(&ActionType::ProgramApply).unwrap(),
+            "\"program-apply\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ActionType::FederationJoin).unwrap(),
+            "\"federation-join\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ActionType::FederationLeave).unwrap(),
+            "\"federation-leave\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ActionType::CharterSign).unwrap(),
+            "\"charter-sign\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ActionType::ExitHandoff).unwrap(),
+            "\"exit-handoff\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ActionType::PayoutsClaim).unwrap(),
+            "\"payouts-claim\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ActionType::AlertPublish).unwrap(),
+            "\"alert-publish\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ActionType::BridgeCommand).unwrap(),
+            "\"bridge-command\""
+        );
+    }
+
+    // ── ActionError diagnostics ─────────────────────────────────
+
+    #[test]
+    fn action_error_stringify_is_human_readable() {
+        let e = ActionError::StaleNonce {
+            got: 5,
+            last_seen: 7,
+        };
+        let s = e.to_string();
+        assert!(s.contains("5"), "should mention got: {s}");
+        assert!(s.contains("7"), "should mention last_seen: {s}");
+    }
+
+    #[test]
+    fn action_error_expired_includes_both_timestamps() {
+        let e = ActionError::Expired {
+            expires_at: 1000,
+            now: 2000,
+        };
+        let s = e.to_string();
+        assert!(s.contains("1000") && s.contains("2000"), "got: {s}");
+    }
 }
 
 /// Verification error categories. Returned by receivers; surfaced to

@@ -98,3 +98,98 @@ pub trait Signer {
     fn pubkey(&self) -> OperatorPubKey;
     fn sign(&self, message: &[u8]) -> anyhow::Result<[u8; 64]>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pubkey_serializes_as_64_hex_chars() {
+        // Full 32-byte key must produce exactly 64 hex chars wrapped in quotes.
+        let k = OperatorPubKey([0xab; 32]);
+        let json = serde_json::to_string(&k).unwrap();
+        assert_eq!(json.len(), 66, "expected 64 hex + 2 quotes, got {json}");
+        assert_eq!(json, format!("\"{}\"", "ab".repeat(32)));
+    }
+
+    #[test]
+    fn pubkey_deserializes_back_to_same_bytes() {
+        let original = OperatorPubKey([
+            0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54,
+            0x32, 0x10, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb,
+            0xcc, 0xdd, 0xee, 0xff,
+        ]);
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: OperatorPubKey = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.0, original.0);
+    }
+
+    #[test]
+    fn pubkey_rejects_wrong_length() {
+        // 30 hex chars = 15 bytes, not 32 · must fail.
+        let err = serde_json::from_str::<OperatorPubKey>(&format!("\"{}\"", "ab".repeat(15)))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("expected 32 bytes"), "got: {err}");
+    }
+
+    #[test]
+    fn pubkey_rejects_non_hex() {
+        let err = serde_json::from_str::<OperatorPubKey>("\"zzzz\"")
+            .unwrap_err()
+            .to_string();
+        assert!(err.to_lowercase().contains("invalid"), "got: {err}");
+    }
+
+    #[test]
+    fn operator_id_is_deterministic_from_pubkey() {
+        // Same pubkey · same id, every time. The kit + me-web both
+        // derive op-id from sha256(pubkey)[..16]; drift here would
+        // make every accepted operator's id rotate on rebuild.
+        let k = OperatorPubKey([0x42; 32]);
+        let id1 = k.to_id();
+        let id2 = k.to_id();
+        assert_eq!(id1, id2);
+        assert!(id1.0.starts_with("op-"));
+        // "op-" + 32 hex chars
+        assert_eq!(id1.0.len(), 3 + 32);
+    }
+
+    #[test]
+    fn operator_id_differs_for_different_pubkeys() {
+        let a = OperatorPubKey([0x42; 32]).to_id();
+        let b = OperatorPubKey([0x43; 32]).to_id();
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn hsm_backend_parses_known_flags() {
+        assert!(matches!(
+            HsmBackend::from_flag("os-keychain").unwrap(),
+            HsmBackend::OsKeychain
+        ));
+        assert!(matches!(
+            HsmBackend::from_flag("yubikey").unwrap(),
+            HsmBackend::Yubikey
+        ));
+        assert!(matches!(
+            HsmBackend::from_flag("ledger").unwrap(),
+            HsmBackend::Ledger
+        ));
+        assert!(matches!(
+            HsmBackend::from_flag("passkey").unwrap(),
+            HsmBackend::Passkey
+        ));
+    }
+
+    #[test]
+    fn hsm_backend_rejects_unknown_flag() {
+        // No silent fallback — an unknown flag must surface as an error
+        // so the operator sees the typo rather than getting the wrong
+        // signing backend.
+        let err = HsmBackend::from_flag("plaintext-key")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unknown --hsm"), "got: {err}");
+    }
+}
