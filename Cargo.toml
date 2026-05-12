@@ -31,6 +31,11 @@ thiserror = "=2.0.9"
 tokio = { version = "=1.44.2", features = ["full"] }
 tracing = "=0.1.41"
 tracing-subscriber = { version = "=0.3.20", features = ["env-filter"] }
+# Sync HTTP for the kit's portal-client calls (fetch charter, list
+# federations, post signed envelopes). ureq is the standard sync
+# choice · no tokio runtime needed for a CLI binary; rustls-only TLS
+# for reproducibility (no system openssl linkage).
+ureq = { version = "=2.12.1", default-features = false, features = ["json", "tls"] }
 
 # Workspace-internal
 oc-guardian-core = { path = "crates/oc-guardian-core" }

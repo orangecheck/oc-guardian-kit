@@ -191,16 +191,32 @@ enum CeremonyCommand {
 
 #[derive(Subcommand)]
 enum CharterCommand {
-    /// Fetch a federation's current charter document.
+    /// Fetch a federation's canonical charter meta · prints hash,
+    /// version, canonical URL, ratification count. Read-only, no
+    /// operator key involved. Run this first to review what `sign`
+    /// would commit to.
     Fetch { slug: String },
-    /// Sign a charter file with the operator's hardware key.
+    /// Produce a hardware-key-signed charter ratification envelope.
+    /// Fetches the canonical charter meta from the portal, signs it
+    /// with your operator key, writes the envelope JSON to disk.
+    /// Idempotent · re-running produces a fresh envelope with a new
+    /// nonce. Review the output, then `oc-guardian charter publish`
+    /// to broadcast.
     Sign {
-        #[arg(long)]
-        file: String,
+        /// Federation slug to ratify (e.g. `oc-me-v1`).
+        slug: String,
+        /// Path to write the signed envelope JSON.
+        #[arg(long, default_value = "charter-sig.json")]
+        out: String,
+        /// Hardware-token backend. Default: `os-keychain`. v0.2 ships
+        /// only os-keychain end-to-end; other backends route there.
         #[arg(long, default_value = "os-keychain")]
         hsm: String,
     },
-    /// Publish a signed charter signature.
+    /// Publish a previously-signed charter ratification envelope.
+    /// Reads the file produced by `charter sign` and POSTs it to the
+    /// portal's `/api/operator/charter` endpoint. Idempotent · the
+    /// portal returns the same signature row when called twice.
     Publish {
         #[arg(long)]
         file: String,
@@ -332,7 +348,7 @@ fn main() -> Result<()> {
         },
         Command::Charter(cmd) => match cmd {
             CharterCommand::Fetch { slug } => oc_guardian_charter::fetch(slug),
-            CharterCommand::Sign { file, hsm } => oc_guardian_charter::sign(file, hsm),
+            CharterCommand::Sign { slug, out, hsm } => oc_guardian_charter::sign(slug, out, hsm),
             CharterCommand::Publish { file, transport } => {
                 oc_guardian_charter::publish(file, transport)
             }
