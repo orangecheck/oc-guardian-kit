@@ -54,13 +54,15 @@ pub fn fetch(slug: String) -> Result<()> {
     println!("canonical  : {}", resp.meta.charter_url);
     println!("published  : {}", resp.meta.published_at);
     println!("ratifications: {}", resp.signatures.len());
-    if resp.meta.charter_version.contains("placeholder") {
+    if resp.meta.charter_version.contains("placeholder")
+        || resp.meta.charter_version.contains("pending")
+    {
         warn!(
-            "the canonical charter for {} is a placeholder · OC has not published \
-             the formal charter document at docs.ochk.io/charter yet. Signing is \
-             still possible against this hash, but operators typically wait for \
-             the formal document.",
-            resp.meta.federation_slug
+            "the meta for `{}` reports version `{}` · this is the v0-pending fallback for an \
+             unknown federation slug, not a real charter. Do not sign this. The OC-managed \
+             oc-me-v1 federation's canonical charter is at docs.ochk.io/federation/oc-me-v1; \
+             self-serve federations get their charter computed at seat-assignment time.",
+            resp.meta.federation_slug, resp.meta.charter_version
         );
     }
     Ok(())
@@ -99,12 +101,14 @@ pub fn sign(slug: String, out: String, hsm: String) -> Result<()> {
         .with_context(|| format!("fetching charter meta for federation {slug}"))?;
     let meta = meta_resp.meta;
 
-    if meta.charter_version.contains("placeholder") {
-        warn!(
-            "signing against placeholder charter for `{}` · OC has not published \
-             the formal charter at docs.ochk.io/charter yet. Re-sign after publication.",
-            slug
-        );
+    if meta.charter_version.contains("placeholder") || meta.charter_version.contains("pending") {
+        return Err(anyhow!(
+            "refusing to sign · the meta for `{slug}` reports version `{}`, which is the \
+             v0-pending fallback for an unknown federation slug, not a real charter. \
+             Verify the slug and re-run. The OC-managed oc-me-v1 charter is at \
+             docs.ochk.io/federation/oc-me-v1.",
+            meta.charter_version
+        ));
     }
 
     // 3. Load the operator keychain signer. The private bytes never
