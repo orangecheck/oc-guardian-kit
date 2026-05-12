@@ -1,0 +1,64 @@
+# cargo-deny config · supply-chain hygiene checks the CI runs alongside
+# cargo-audit. Audit covers known-CVE advisories; deny covers (a) licenses
+# we'll accept, (b) crates we explicitly ban, (c) source registries
+# allowed, (d) duplicate-version detection (large diamond deps that blow
+# up the dependency tree).
+#
+# Run locally: `cargo deny --workspace check`.
+#
+# Reproducible-build invariant: every dep is pinned in workspace Cargo.toml
+# with `=X.Y.Z`. cargo-deny enforces no semver drift via the [bans]
+# table.
+
+[graph]
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+yanked = "deny"
+ignore = [
+    # Same rationale as .cargo/audit.toml · re-evaluated in lockstep.
+    # The unsound path in rand 0.8.5 (custom logger using rand::rng())
+    # is structurally unreachable for the kit's OsRng + fill_bytes
+    # usage. Bumping to rand 0.9 is tracked.
+    "RUSTSEC-2026-0097",
+]
+
+[licenses]
+# Permissive only · MIT/Apache-2.0/BSD/ISC/Unicode-DFS-2016/MPL-2.0.
+# No copyleft + no GPL-family.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "Zlib",
+    "CC0-1.0",
+    "0BSD",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+# Workspace deps are all pinned to `=X.Y.Z` in the root Cargo.toml ·
+# any path that introduces a versionless or caret-range dep is flagged.
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

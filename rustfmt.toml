@@ -1,0 +1,18 @@
+# Stable-only rustfmt config · CI runs on stable rust 1.85.
+# Options that require nightly (imports_granularity, group_imports,
+# overflow_delimited_expr, trailing_comma=Vertical, format_strings,
+# format_macro_matchers, struct_field_align_threshold) are tracked
+# but not enabled until those options stabilize.
+
+edition = "2021"
+max_width = 100
+tab_spaces = 4
+hard_tabs = false
+newline_style = "Unix"
+use_small_heuristics = "Default"
+reorder_imports = true
+reorder_modules = true
+match_block_trailing_comma = false
+remove_nested_parens = true
+use_field_init_shorthand = true
+use_try_shorthand = true

@@ -1,0 +1,22 @@
+# Clippy thresholds tuned for a CLI tool with cryptographic primitives.
+# CI runs `cargo clippy --workspace --all-targets -- -D warnings`, so any
+# violation here is a build break.
+
+# 1.85 baseline · stay compatible with the workspace.rust-version pin.
+msrv = "1.85"
+
+# Functions in this codebase routinely pass multiple flags + a hsm
+# backend + a config dir + an out path. 8 is the practical ceiling
+# the CLI entry points already hit; below that we'd be force-grouping
+# into structs that buy nothing.
+too-many-arguments-threshold = 8
+
+# Cognitive complexity at the function level. The default of 25 trips
+# on the perfectly-readable lifecycle dispatch in commands.rs; 35 is
+# the actual ceiling we tolerate before refactoring is owed.
+cognitive-complexity-threshold = 35
+
+# We canonicalize JSON via serde_json for envelope signing · the hex
+# encodings are fine on the wire.
+disallowed-methods = []
+disallowed-types = []

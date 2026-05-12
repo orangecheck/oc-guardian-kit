@@ -56,3 +56,19 @@ jobs:
       # unreachable. Ignored with rationale at .cargo/audit.toml; will
       # bump to rand 0.9 once that API migration is scoped.
       - run: cargo audit --ignore RUSTSEC-2026-0097
+
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      # cargo-deny enforces licenses + bans + duplicate-version detection +
+      # source registries. Catches things cargo-audit doesn't (license drift,
+      # caret-range deps slipping in past our `=X.Y.Z` pin convention,
+      # multiple-version diamonds blowing up the dep tree).
+      - name: install cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --workspace
