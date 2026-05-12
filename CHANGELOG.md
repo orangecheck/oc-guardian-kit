@@ -10,6 +10,35 @@ surface (CLI flags, action-envelope schemas, file paths under
 
 ### Added
 
+- **Charter fetch / sign / publish** · `oc-guardian charter {fetch,sign,publish}`.
+  v0.1 stubs replaced with real implementations covering BYPASS.md §06
+  end-to-end · the kit can now ratify an OC-Me federation charter
+  without touching the portal UI. `charter fetch <slug>` hits the
+  portal's `/api/operator/charter`, prints meta + ratification count.
+  `charter sign <slug> --out <path>` produces a hardware-key-signed
+  ActionEnvelope (action: `charter-sign`, replay-protected nonce +
+  1-hour expiry); self-verifies before writing. `charter publish
+  --file <path>` POSTs the envelope to the portal. **Refuses to sign**
+  v0-pending fallback charters (unknown federation slugs) with a
+  clean error pointing at `docs.ochk.io/federation/<slug>`.
+
+- **Portal client** · `oc-guardian-core::portal_client`. Sync HTTP
+  client (ureq, rustls-only TLS for reproducibility, 15s timeout,
+  workspace user-agent) for kit-side portal interactions. Respects
+  `OC_PORTAL_BASE` env override. Typed deserialization wrappers for
+  `CharterFetchResponse`, `CharterMeta`, `CharterSignature`,
+  `PublicFederation` mirroring me-web wire shapes field-for-field.
+  8 unit tests on URL join + deserialization + env handling.
+
+- **Best-practice infrastructure** · `rustfmt.toml` (stable-only
+  formatting rules · workspace-wide 100-col, Unix newlines, import
+  reordering), `clippy.toml` (msrv 1.85 pinned, too-many-arguments
+  threshold tuned for the CLI's lifecycle dispatch, cognitive-
+  complexity threshold 35), `deny.toml` (cargo-deny config ·
+  permissive license allowlist, wildcard ban, crates.io-only
+  registry, multiple-version detection). New `cargo-deny` job in
+  CI alongside `cargo-audit`.
+
 - **`oc-guardian apply verify-acceptance --file <path> --reviewer-pubkey-hex <hex>`**
   — replaces the v0.1 stub with a working Ed25519 verifier for
   reviewer-signed acceptance envelopes. The kit re-canonicalizes the
