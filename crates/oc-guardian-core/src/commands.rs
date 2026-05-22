@@ -732,15 +732,36 @@ pub fn audit_export(out: String) -> Result<()> {
 /// `oc-guardian exit-handoff` · produce a hardware-signed `exit-handoff`
 /// envelope announcing the operator's intent to hand their seat to a
 /// replacement guardian, effective a given date.
+/// Derive a successor's operator_id from their Ed25519 pubkey hex, using the
+/// kit-canonical `OperatorPubKey::to_id`. Returns None if the replacement
+/// string isn't a valid 32-byte hex pubkey (then it stays in the reason text).
+fn successor_operator_id_from(pubkey_hex: &str) -> Option<String> {
+    let bytes = hex::decode(pubkey_hex.trim()).ok()?;
+    let arr: [u8; 32] = bytes.try_into().ok()?;
+    Some(OperatorPubKey(arr).to_id().0)
+}
+
 pub fn exit_handoff(federation: String, replacement: String, effective_date: String) -> Result<()> {
     let (id, signer) = load_operator()?;
-    let params = serde_json::json!({
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock before epoch")?
+        .as_secs();
+    // Portal-canonical exit-handoff params (matches oc-me-web
+    // validateExitHandoffEnvelope): operator_id, federation_slug, signed_at
+    // (REQUIRED — the portal 422s without it), reason, and an optional
+    // successor_operator_id. The human-readable effective date stays in reason.
+    let mut params = serde_json::json!({
         "operator_id": id.0,
         "federation_slug": federation,
+        "signed_at": iso8601_utc(now),
         "reason": format!("exit-handoff to {replacement}, effective {effective_date}"),
-        "successor_pubkey": replacement,
-        "effective_date": effective_date,
     });
+    // If the replacement is a valid pubkey, include the structured successor
+    // (kit ↔ portal operator_id derivations are pinned identical).
+    if let Some(succ) = successor_operator_id_from(&replacement) {
+        params["successor_operator_id"] = serde_json::Value::String(succ);
+    }
     let env = build_signed_envelope(&signer, ActionType::ExitHandoff, params, Some(federation))?;
     write_envelope(
         &env,

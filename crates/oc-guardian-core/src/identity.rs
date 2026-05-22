@@ -113,6 +113,32 @@ mod tests {
     }
 
     #[test]
+    fn to_id_is_op_plus_32_hex() {
+        // op-<hex(sha256(pubkey)[..16])> → "op-" + 32 hex chars.
+        let id = OperatorPubKey([0xab; 32]).to_id();
+        assert!(id.0.starts_with("op-"));
+        assert_eq!(id.0.len(), 3 + 32, "op- + 32 hex; got {}", id.0);
+    }
+
+    #[test]
+    fn to_id_matches_portal_cross_language_vector() {
+        // CROSS-LANGUAGE PARITY: me.ochk.io derives the same operator_id from a
+        // pubkey (oc-me-web operator-identity-store.ts deriveOperatorIdFromPubkeyHex
+        // + browser-key.ts). Both sides pin this exact pubkey→id mapping; if the
+        // kit and portal ever disagree, browser-key flows would mis-attribute.
+        // pubkey = the ed25519-dalek attestation test pubkey.
+        let pk: [u8; 32] =
+            hex::decode("8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        assert_eq!(
+            OperatorPubKey(pk).to_id().0,
+            "op-34750f98bd59fcfc946da45aaabe933b"
+        );
+    }
+
+    #[test]
     fn pubkey_deserializes_back_to_same_bytes() {
         let original = OperatorPubKey([
             0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54,
