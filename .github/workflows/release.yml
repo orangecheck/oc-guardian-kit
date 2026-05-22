@@ -141,6 +141,9 @@ jobs:
         with:
           context: .
           push: true
+          # Fly machines + the upstream fedimintd .deb are amd64; pin it so
+          # the published image always matches the deploy target.
+          platforms: linux/amd64
           tags: |
             ghcr.io/orangecheck/oc-guardian:${{ steps.meta.outputs.tag }}
             ghcr.io/orangecheck/oc-guardian:latest
