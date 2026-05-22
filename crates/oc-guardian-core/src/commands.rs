@@ -382,17 +382,9 @@ pub fn federations_leave(_slug: String) -> Result<()> {
     todo_command!("federations leave")
 }
 
-pub fn ceremony_start(_peers: String, _setup_code: String) -> Result<()> {
-    todo_command!("ceremony start")
-}
-
-pub fn ceremony_status() -> Result<()> {
-    todo_command!("ceremony status")
-}
-
-pub fn ceremony_finalize() -> Result<()> {
-    todo_command!("ceremony finalize")
-}
+// The DKG ceremony now lives in oc-guardian-fedimint::ceremony (it needs
+// the fedimintd runtime + setup-UI phase detection). The CLI dispatches
+// `ceremony *` straight there.
 
 /// Report the operator's local state — identity, config dir, keychain
 /// presence, kit version, bridge configuration. Purely local; no

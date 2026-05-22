@@ -143,6 +143,10 @@ mod tests {
             ("OC_OPERATOR_PUBKEY_HEX".to_string(), "aa".to_string()),
             ("OC_FEDERATION_SLUG".to_string(), "oc-me-v1".to_string()),
             ("OC_PUBLIC_HOST".to_string(), "g.example.com".to_string()),
+            (
+                "OC_ESPLORA_URL".to_string(),
+                "https://mempool.space/api".to_string(),
+            ),
         ]);
         FedimintdRuntime::from_vars(|k| m.get(k).cloned()).unwrap()
     }

@@ -17,6 +17,7 @@
 //! guardian's attestation and an un-attested box is visibly un-attested.
 
 pub mod attest;
+pub mod ceremony;
 pub mod config;
 pub mod install;
 pub mod run;

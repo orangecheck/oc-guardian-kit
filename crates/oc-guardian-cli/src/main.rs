@@ -343,10 +343,10 @@ fn main() -> Result<()> {
         },
         Command::Ceremony(cmd) => match cmd {
             CeremonyCommand::Start { peers, setup_code } => {
-                oc_guardian_core::commands::ceremony_start(peers, setup_code)
+                oc_guardian_fedimint::ceremony::start(peers, setup_code)
             }
-            CeremonyCommand::Status => oc_guardian_core::commands::ceremony_status(),
-            CeremonyCommand::Finalize => oc_guardian_core::commands::ceremony_finalize(),
+            CeremonyCommand::Status => oc_guardian_fedimint::ceremony::status(),
+            CeremonyCommand::Finalize => oc_guardian_fedimint::ceremony::finalize(),
         },
         Command::Charter(cmd) => match cmd {
             CharterCommand::Fetch { slug } => oc_guardian_charter::fetch(slug),

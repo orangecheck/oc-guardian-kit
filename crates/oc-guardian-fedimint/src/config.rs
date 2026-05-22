@@ -25,6 +25,22 @@ pub const DEFAULT_API_PORT: u16 = 9001;
 /// Fly; reached over the machine's private network during the ceremony.
 pub const DEFAULT_UI_PORT: u16 = 8175;
 
+/// fedimintd's Bitcoin data source. fedimintd MANDATES one (it refuses
+/// to start without `--bitcoind-url` or `--esplora-url`); the federation
+/// watches the chain through it. Esplora is the zero-infra default
+/// (no bitcoind to run); bitcoind is for operators running their own node.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BitcoinBackend {
+    /// `FM_ESPLORA_URL` — e.g. https://mempool.space/api.
+    Esplora { url: String },
+    /// `FM_BITCOIND_URL` (+ optional username/password).
+    Bitcoind {
+        url: String,
+        username: Option<String>,
+        password: Option<String>,
+    },
+}
+
 /// A fully-resolved fedimintd runtime, derived from the machine env.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FedimintdRuntime {
@@ -37,6 +53,10 @@ pub struct FedimintdRuntime {
     pub p2p_port: u16,
     pub api_port: u16,
     pub ui_port: u16,
+    /// `FM_BITCOIN_NETWORK` — `bitcoin` (mainnet) for production.
+    pub bitcoin_network: String,
+    /// The mandatory Bitcoin data source.
+    pub bitcoin_backend: BitcoinBackend,
     /// Operator identity (for the attestation + audit context).
     pub operator_id: String,
     pub operator_pubkey_hex: String,
@@ -87,12 +107,35 @@ impl FedimintdRuntime {
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("/data/fedimintd"));
 
+        // Bitcoin backend · fedimintd refuses to start without one. Prefer
+        // an explicit bitcoind URL; else an Esplora URL. Required.
+        let nonempty = |k: &str| get(k).filter(|v| !v.is_empty());
+        let bitcoin_backend = if let Some(url) = nonempty("OC_BITCOIND_URL") {
+            BitcoinBackend::Bitcoind {
+                url,
+                username: nonempty("OC_BITCOIND_USERNAME"),
+                password: nonempty("OC_BITCOIND_PASSWORD"),
+            }
+        } else if let Some(url) = nonempty("OC_ESPLORA_URL") {
+            BitcoinBackend::Esplora { url }
+        } else {
+            return Err(anyhow!(
+                "fedimintd needs a Bitcoin backend · set OC_ESPLORA_URL (e.g. \
+                 https://mempool.space/api) or OC_BITCOIND_URL (+ OC_BITCOIND_USERNAME/PASSWORD)"
+            ));
+        };
+
         Ok(Self {
             data_dir,
             public_host,
             p2p_port: port("OC_P2P_PORT", DEFAULT_P2P_PORT)?,
             api_port: port("OC_API_PORT", DEFAULT_API_PORT)?,
             ui_port: port("OC_UI_PORT", DEFAULT_UI_PORT)?,
+            // Production default is mainnet; override via OC_BITCOIN_NETWORK
+            // (bitcoin | testnet | signet | regtest).
+            bitcoin_network: nonempty("OC_BITCOIN_NETWORK")
+                .unwrap_or_else(|| "bitcoin".to_string()),
+            bitcoin_backend,
             operator_id: require("OC_OPERATOR_ID")?,
             operator_pubkey_hex: require("OC_OPERATOR_PUBKEY_HEX")?,
             federation_slug: require("OC_FEDERATION_SLUG")?,
@@ -124,6 +167,26 @@ impl FedimintdRuntime {
         env.insert("FM_BIND_UI".into(), format!("0.0.0.0:{}", self.ui_port));
         env.insert("FM_P2P_URL".into(), self.p2p_url());
         env.insert("FM_API_URL".into(), self.api_url());
+        env.insert("FM_BITCOIN_NETWORK".into(), self.bitcoin_network.clone());
+        // Bitcoin backend — fedimintd mandates one.
+        match &self.bitcoin_backend {
+            BitcoinBackend::Esplora { url } => {
+                env.insert("FM_ESPLORA_URL".into(), url.clone());
+            }
+            BitcoinBackend::Bitcoind {
+                url,
+                username,
+                password,
+            } => {
+                env.insert("FM_BITCOIND_URL".into(), url.clone());
+                if let Some(u) = username {
+                    env.insert("FM_BITCOIND_USERNAME".into(), u.clone());
+                }
+                if let Some(p) = password {
+                    env.insert("FM_BITCOIND_PASSWORD".into(), p.clone());
+                }
+            }
+        }
         env
     }
 
@@ -145,6 +208,10 @@ mod tests {
             ("OC_OPERATOR_PUBKEY_HEX".to_string(), "deadbeef".to_string()),
             ("OC_FEDERATION_SLUG".to_string(), "oc-me-v1".to_string()),
             ("FLY_APP_NAME".to_string(), "oc-guardian-xyz".to_string()),
+            (
+                "OC_ESPLORA_URL".to_string(),
+                "https://mempool.space/api".to_string(),
+            ),
         ])
     }
 
@@ -175,7 +242,45 @@ mod tests {
         let env = r.fedimintd_env();
         assert_eq!(env.get("FM_BIND_P2P").unwrap(), "0.0.0.0:9000");
         assert_eq!(env.get("FM_BIND_API").unwrap(), "0.0.0.0:9001");
+        assert_eq!(env.get("FM_BIND_UI").unwrap(), "0.0.0.0:8175");
         assert_eq!(env.get("FM_DATA_DIR").unwrap(), "/data/fedimintd");
+    }
+
+    #[test]
+    fn bitcoin_backend_required() {
+        let mut m = base();
+        m.remove("OC_ESPLORA_URL");
+        let err = FedimintdRuntime::from_vars(|k| m.get(k).cloned())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Bitcoin backend"), "got: {err}");
+    }
+
+    #[test]
+    fn esplora_backend_maps_to_fm_env_and_mainnet_default() {
+        let env = rt(&base()).fedimintd_env();
+        assert_eq!(
+            env.get("FM_ESPLORA_URL").unwrap(),
+            "https://mempool.space/api"
+        );
+        assert_eq!(env.get("FM_BITCOIN_NETWORK").unwrap(), "bitcoin");
+        assert!(!env.contains_key("FM_BITCOIND_URL"));
+    }
+
+    #[test]
+    fn bitcoind_backend_with_creds_overrides_esplora() {
+        let mut m = base();
+        m.insert("OC_BITCOIND_URL".into(), "http://127.0.0.1:8332".into());
+        m.insert("OC_BITCOIND_USERNAME".into(), "rpcuser".into());
+        m.insert("OC_BITCOIND_PASSWORD".into(), "rpcpass".into());
+        m.insert("OC_BITCOIN_NETWORK".into(), "signet".into());
+        let env = rt(&m).fedimintd_env();
+        assert_eq!(env.get("FM_BITCOIND_URL").unwrap(), "http://127.0.0.1:8332");
+        assert_eq!(env.get("FM_BITCOIND_USERNAME").unwrap(), "rpcuser");
+        assert_eq!(env.get("FM_BITCOIND_PASSWORD").unwrap(), "rpcpass");
+        assert_eq!(env.get("FM_BITCOIN_NETWORK").unwrap(), "signet");
+        // bitcoind takes precedence; no esplora var emitted.
+        assert!(!env.contains_key("FM_ESPLORA_URL"));
     }
 
     #[test]
