@@ -7,8 +7,14 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "fedimintd binary lifecycle management for the OC guardian kit (download, verify, run)."
+description = "fedimintd binary lifecycle management for the OC guardian kit (download, verify, run, attest)."
 
 [dependencies]
 anyhow.workspace = true
 tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+sha2.workspace = true
+ureq.workspace = true
+oc-guardian-core = { workspace = true }
