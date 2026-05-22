@@ -37,11 +37,13 @@ tracing-subscriber = { version = "=0.3.20", features = ["env-filter"] }
 # for reproducibility (no system openssl linkage).
 ureq = { version = "=2.12.1", default-features = false, features = ["json", "tls"] }
 
-# Workspace-internal
-oc-guardian-core = { path = "crates/oc-guardian-core" }
-oc-guardian-fedimint = { path = "crates/oc-guardian-fedimint" }
-oc-guardian-charter = { path = "crates/oc-guardian-charter" }
-oc-guardian-portal-bridge = { path = "crates/oc-guardian-portal-bridge" }
+# Workspace-internal · pin an explicit version alongside the path so the
+# inter-crate deps aren't wildcards (cargo-deny `wildcards = "deny"`).
+# Keep in lockstep with [workspace.package] version.
+oc-guardian-core = { path = "crates/oc-guardian-core", version = "0.2.0" }
+oc-guardian-fedimint = { path = "crates/oc-guardian-fedimint", version = "0.2.0" }
+oc-guardian-charter = { path = "crates/oc-guardian-charter", version = "0.2.0" }
+oc-guardian-portal-bridge = { path = "crates/oc-guardian-portal-bridge", version = "0.2.0" }
 
 [profile.release]
 # Reproducible-build friendly: no per-host non-determinism, optimize for
