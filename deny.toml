@@ -54,6 +54,11 @@ confidence-threshold = 0.8
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# The workspace's own crates depend on each other by path
+# (`{ workspace = true }` → path dep, no version), which resolves to `*`.
+# Those internal wildcards are intentional — exempt them; the deny is
+# meant to catch unpinned EXTERNAL crates, all of which are `=X.Y.Z`.
+allow-wildcard-paths = true
 highlight = "all"
 # Workspace deps are all pinned to `=X.Y.Z` in the root Cargo.toml ·
 # any path that introduces a versionless or caret-range dep is flagged.
