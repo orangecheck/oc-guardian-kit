@@ -145,7 +145,7 @@ jobs:
             ghcr.io/orangecheck/oc-guardian:${{ steps.meta.outputs.tag }}
             ghcr.io/orangecheck/oc-guardian:latest
           build-args: |
-            FEDIMINTD_VERSION=${{ vars.FEDIMINTD_VERSION || '0.7.2' }}
+            FEDIMINTD_VERSION=${{ vars.FEDIMINTD_VERSION || '0.11.1' }}
             FEDIMINTD_SHA256=${{ vars.FEDIMINTD_SHA256 }}
       - name: install cosign
         uses: sigstore/cosign-installer@v3

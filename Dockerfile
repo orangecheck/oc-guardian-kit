@@ -9,13 +9,14 @@
 # supervises a bundled, pinned fedimintd; it emits operator-signed
 # attestations (no TEE).
 #
-# fedimintd is fetched + SHA-256-verified at build time. The release
-# workflow MUST pass the verified upstream hash:
+# fedimintd is installed from the upstream .deb, SHA-256-verified at build
+# time. The release workflow MUST pass the verified .deb hash:
 #   docker build \
-#     --build-arg FEDIMINTD_VERSION=0.7.2 \
-#     --build-arg FEDIMINTD_SHA256=<verified-upstream-sha256> .
-# Without FEDIMINTD_SHA256 the build fails — we never ship an unverified
-# consensus binary.
+#     --build-arg FEDIMINTD_VERSION=0.11.1 \
+#     --build-arg FEDIMINTD_SHA256=4f125dea124e3487a82b6cc75edc94fc8a41f65a578c8892cff4229cbdab9810 .
+# (that hash is fedimintd_0.11.1_amd64.deb, verified upstream.) Without
+# FEDIMINTD_SHA256 the build fails — we never ship an unverified consensus
+# binary.
 
 # ── Stage 1 · build the kit (oc-guardian) ────────────────────────────
 FROM rust:1.85-slim-bookworm AS kit-build
@@ -28,29 +29,30 @@ COPY crates ./crates
 RUN cargo build --release --bin oc-guardian
 
 # ── Stage 2 · fetch + verify fedimintd ───────────────────────────────
-FROM debian:bookworm-slim AS fedimintd-fetch
-ARG FEDIMINTD_VERSION=0.7.2
-ARG FEDIMINTD_URL=https://github.com/fedimint/fedimint/releases/download/v${FEDIMINTD_VERSION}/fedimintd-x86_64-unknown-linux-gnu
-ARG FEDIMINTD_SHA256=""
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-RUN test -n "$FEDIMINTD_SHA256" \
-    || (echo "ERROR: build-arg FEDIMINTD_SHA256 is required (verified upstream hash)"; exit 1)
-RUN curl -fsSL "$FEDIMINTD_URL" -o /fedimintd \
-    && echo "${FEDIMINTD_SHA256}  /fedimintd" | sha256sum -c - \
-    && chmod 0755 /fedimintd
-
-# ── Stage 3 · runtime ────────────────────────────────────────────────
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim AS runtime
 LABEL org.opencontainers.image.title="oc-guardian" \
       org.opencontainers.image.source="https://github.com/orangecheck/oc-guardian-kit" \
       org.opencontainers.image.description="OrangeCheck Fedimint guardian (kit + bundled fedimintd)"
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+
+# fedimintd is installed from the upstream .deb (debian-native; apt
+# resolves its runtime deps + puts fedimintd on PATH). The .deb is
+# SHA-256-verified before install — the build fails without the verified
+# hash, so we never bundle an unverified consensus binary.
+ARG FEDIMINTD_VERSION=0.11.1
+ARG FEDIMINTD_DEB_URL=https://github.com/fedimint/fedimint/releases/download/v${FEDIMINTD_VERSION}/fedimintd_${FEDIMINTD_VERSION}_amd64.deb
+ARG FEDIMINTD_SHA256=""
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+    && test -n "$FEDIMINTD_SHA256" \
+       || (echo "ERROR: build-arg FEDIMINTD_SHA256 is required (verified upstream .deb hash)"; exit 1) \
+    && curl -fsSL "$FEDIMINTD_DEB_URL" -o /tmp/fedimintd.deb \
+    && echo "${FEDIMINTD_SHA256}  /tmp/fedimintd.deb" | sha256sum -c - \
+    && apt-get install -y --no-install-recommends /tmp/fedimintd.deb \
+    && rm -f /tmp/fedimintd.deb \
     && rm -rf /var/lib/apt/lists/* \
+    && command -v fedimintd >/dev/null || (echo "ERROR: fedimintd not on PATH after install"; exit 1) \
     && useradd -m -u 10001 guardian \
     && mkdir -p /data/fedimintd && chown -R guardian:guardian /data
 COPY --from=kit-build /build/target/release/oc-guardian /usr/local/bin/oc-guardian
-COPY --from=fedimintd-fetch /fedimintd /usr/local/bin/fedimintd
 USER guardian
 ENV FM_DATA_DIR=/data/fedimintd
 # 9000 P2P · 9001 consensus API · (8175 setup/DKG bind is machine-private)

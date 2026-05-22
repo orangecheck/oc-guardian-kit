@@ -36,13 +36,15 @@ pub struct PinnedRelease {
 /// (Hashes are pinned per release in the release PR; the Fly image's
 /// bundled fedimintd is the validated production path.)
 pub const PINNED_RELEASES: &[PinnedRelease] = &[
-    // Example shape — replace url/sha256 with the verified upstream
-    // release artifact when pinning a version:
-    // PinnedRelease {
-    //     version: "0.7.2",
-    //     url: "https://github.com/fedimint/fedimint/releases/download/v0.7.2/fedimintd-x86_64-unknown-linux-gnu",
-    //     sha256_hex: "<verified-sha256>",
-    // },
+    // v0.11.1 · the upstream linux x86_64 self-contained `fedimintd-v*`
+    // executable. SHA-256 verified against the GitHub release artifact
+    // (2026-05-22). The Fly image installs the .deb instead (see
+    // Dockerfile); this raw binary is the bare-metal install path.
+    PinnedRelease {
+        version: "0.11.1",
+        url: "https://github.com/fedimint/fedimint/releases/download/v0.11.1/fedimintd-v0.11.1",
+        sha256_hex: "7bf66dd5948f2c753f1ba8c37dbdcca30b1d4d004ae47031642f3e832ea5f326",
+    },
 ];
 
 fn lookup(version: &str) -> Option<&'static PinnedRelease> {
