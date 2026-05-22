@@ -29,18 +29,6 @@ use crate::config::{
 use crate::identity::{HsmBackend, OperatorPubKey, Signer};
 use crate::keychain;
 
-macro_rules! todo_command {
-    ($name:expr) => {{
-        info!(
-            "{}: not yet implemented in v0.1.0 — see BYPASS.md or run \
-             `oc-guardian {} --help`. Architecture for this command is \
-             described in GUARDIAN-PROGRAM-DESIGN.md (workspace root).",
-            $name, $name
-        );
-        Ok(())
-    }};
-}
-
 /// Generate the operator's Ed25519 identity, persist the private key
 /// to the OS keychain, write the public key + identifier + non-secret
 /// kit config to the operator's config dir.
@@ -338,8 +326,95 @@ pub fn apply_verify_acceptance(file: String, reviewer_pubkey_hex: String) -> Res
     Ok(())
 }
 
+// ── Shared helpers for the signed-envelope + portal commands ─────────
+
+/// Load the operator identity + keychain signer, or a clear error.
+fn load_operator() -> Result<(crate::identity::OperatorId, keychain::KeychainSigner)> {
+    let dir = resolve_dir(None)?;
+    let id = read_id(&dir)?.context("no operator identity — run `oc-guardian init` first")?;
+    let signer = keychain::load(&id.0)?.with_context(|| {
+        format!(
+            "operator {} has no key in the OS keychain — re-run `oc-guardian init`",
+            id.0
+        )
+    })?;
+    Ok((id, signer))
+}
+
+/// Build + sign an `ActionEnvelope`. The nonce is unix-seconds (monotonic
+/// per run); the portal rejects equal-or-lower nonces it has seen.
+fn build_signed_envelope(
+    signer: &keychain::KeychainSigner,
+    action: ActionType,
+    params: serde_json::Value,
+    federation: Option<String>,
+) -> Result<ActionEnvelope> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock before epoch")?
+        .as_secs() as i64;
+    let payload = ActionPayload {
+        action,
+        params,
+        nonce: now as u64,
+        expires_at: now + 30 * 86_400,
+        federation,
+    };
+    let canon = serde_json::to_vec(&payload).context("serializing action payload")?;
+    let sig = signer.sign(&canon).context("signing action payload")?;
+    Ok(ActionEnvelope {
+        payload,
+        pubkey: signer.pubkey(),
+        sig_hex: hex::encode(sig),
+    })
+}
+
+/// Write a signed envelope to disk + print portal-submission guidance.
+/// The operator endpoints are session-gated (the kit is not signed-in), so
+/// the kit's job is to PRODUCE the hardware-signed envelope; the operator
+/// submits it via the authenticated me.ochk.io surface — same pattern as
+/// `charter sign`.
+fn write_envelope(env: &ActionEnvelope, out: &str, what: &str, submit_path: &str) -> Result<()> {
+    let json = serde_json::to_vec_pretty(env).context("encoding envelope")?;
+    fs::write(out, &json).with_context(|| format!("writing {out}"))?;
+    println!();
+    println!("  ✓ signed {what} envelope written to {out}");
+    println!("    it carries your hardware-key signature · OC cannot forge it.");
+    println!("    submit it signed-in at the matching me.ochk.io/me/operator surface");
+    println!("    (the portal POSTs it to {submit_path}).");
+    println!();
+    Ok(())
+}
+
+/// `oc-guardian register` · the operator registry is public; check whether
+/// this operator's pubkey is published in it (i.e. accepted into the
+/// program), and report. Registration itself happens via the apply →
+/// accept flow, not a self-publish.
 pub fn register(_transport: String) -> Result<()> {
-    todo_command!("register")
+    use crate::portal_client::{OperatorRegistryResponse, PortalClient};
+    let (id, signer) = load_operator()?;
+    let my_pubkey = hex::encode(signer.pubkey().0);
+    let client = PortalClient::from_env(None);
+    let resp: OperatorRegistryResponse = client
+        .get_json("/api/operator/registry")
+        .context("fetching the operator registry")?;
+    let listed = resp
+        .operators
+        .iter()
+        .any(|o| o.pubkey.eq_ignore_ascii_case(&my_pubkey));
+    println!();
+    println!("  operator {}", id.0);
+    println!("    pubkey    {my_pubkey}");
+    println!("    registry  {} accepted operators", resp.count);
+    if listed {
+        println!("    status    ✓ your pubkey is in the OC operator registry (accepted)");
+    } else {
+        println!("    status    ✗ not yet in the registry");
+        println!("    → run `oc-guardian apply prepare` + email apply@ochk.io; once accepted,");
+        println!("      your pubkey is published here for federations to include in a charter.");
+    }
+    println!();
+    Ok(())
 }
 
 pub fn federations_list() -> Result<()> {
@@ -374,12 +449,32 @@ pub fn federations_list() -> Result<()> {
     Ok(())
 }
 
-pub fn federations_join(_slug: String, _transport: String) -> Result<()> {
-    todo_command!("federations join")
+/// `oc-guardian federations join` · joining a federation isn't a single
+/// envelope — it's a seat assignment (admin) + a charter ratification.
+/// Point the operator at the real path rather than POST to a non-endpoint.
+pub fn federations_join(slug: String, _transport: String) -> Result<()> {
+    println!();
+    println!("  joining federation {slug}:");
+    println!("    1. an OC admin assigns you a guardian seat (after your application is accepted)");
+    println!("    2. ratify the charter — that IS your join:");
+    println!("         oc-guardian charter sign --slug {slug}");
+    println!("         oc-guardian charter publish --file charter-sig.json");
+    println!("    3. run DKG with your peers:  oc-guardian ceremony start …");
+    println!();
+    Ok(())
 }
 
-pub fn federations_leave(_slug: String) -> Result<()> {
-    todo_command!("federations leave")
+/// `oc-guardian federations leave` · a clean exit from a threshold
+/// federation is an exit-handoff to a successor, not a unilateral leave.
+pub fn federations_leave(slug: String) -> Result<()> {
+    println!();
+    println!("  leaving federation {slug} is an exit-handoff to a replacement guardian:");
+    println!(
+        "    oc-guardian exit-handoff --federation {slug} --replacement <pubkey> --effective-date <YYYY-MM-DD>"
+    );
+    println!("  (a threshold federation needs a successor before you step down.)");
+    println!();
+    Ok(())
 }
 
 // The DKG ceremony now lives in oc-guardian-fedimint::ceremony (it needs
@@ -471,42 +566,263 @@ pub fn status() -> Result<()> {
     Ok(())
 }
 
-pub fn alerts_subscribe(_federation: String) -> Result<()> {
-    todo_command!("alerts subscribe")
+/// Format unix seconds as ISO-8601 UTC (`YYYY-MM-DDTHH:MM:SSZ`) via the
+/// civil-from-days algorithm — no chrono dep. Used for incident
+/// `occurred_at`, which the portal validates with `Date.parse`.
+fn iso8601_utc(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    let (h, mi, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+    // days since 1970-01-01 → civil (y, m, d) · Howard Hinnant's algorithm.
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let mut y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    if m <= 2 {
+        y += 1;
+    }
+    format!("{y:04}-{m:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z")
 }
 
-pub fn alerts_post(_federation: String, _severity: String, _body: String) -> Result<()> {
-    todo_command!("alerts post")
+/// `oc-guardian alerts subscribe` · alert delivery is a portal-bridge
+/// feature; point the operator at it rather than fake a subscription.
+pub fn alerts_subscribe(federation: String) -> Result<()> {
+    println!();
+    println!("  alert delivery for {federation} is a portal-bridge feature:");
+    println!("    oc-guardian bridge enable    # opt into portal-mediated signed requests");
+    println!("  published incidents are visible at me.ochk.io/me/operator (incidents)");
+    println!("  and the public /federations timeline.");
+    println!();
+    Ok(())
 }
 
-pub fn payouts_list(_federation: String) -> Result<()> {
-    todo_command!("payouts list")
+/// `oc-guardian alerts post` · produce a hardware-signed incident envelope
+/// (severity/title/body) for publication to the federation's channel.
+pub fn alerts_post(federation: String, severity: String, body: String) -> Result<()> {
+    let (id, signer) = load_operator()?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock before epoch")?
+        .as_secs();
+    let title: String = body.chars().take(120).collect();
+    let params = serde_json::json!({
+        "operator_id": id.0,
+        "federation_slug": federation,
+        "occurred_at": iso8601_utc(now),
+        "severity": severity,
+        "title": title,
+        "body": body,
+        "tags": [],
+    });
+    let env = build_signed_envelope(&signer, ActionType::AlertPublish, params, Some(federation))?;
+    write_envelope(&env, "incident.json", "incident", "/api/operator/incidents")
 }
 
-pub fn payouts_claim(_federation: String, _to: String) -> Result<()> {
-    todo_command!("payouts claim")
+/// `oc-guardian payouts list` · accrued-payout figures are session-gated
+/// at the portal; the kit produces the signed CLAIM envelope locally.
+pub fn payouts_list(federation: String) -> Result<()> {
+    let (id, _signer) = load_operator()?;
+    println!();
+    println!("  payouts · operator {} · federation {federation}", id.0);
+    println!("    accrued figures are session-gated — view them signed-in at");
+    println!("    me.ochk.io/me/operator. To withdraw, produce a signed claim:");
+    println!("      oc-guardian payouts claim --federation {federation} --to <bc1q…>");
+    println!();
+    Ok(())
 }
 
+/// `oc-guardian payouts claim` · produce a hardware-signed `payouts-claim`
+/// envelope directing accrued payouts to a Bitcoin destination.
+pub fn payouts_claim(federation: String, to: String) -> Result<()> {
+    let (id, signer) = load_operator()?;
+    let params = serde_json::json!({
+        "operator_id": id.0,
+        "destination": to,
+        "federation_slug": federation,
+    });
+    let env = build_signed_envelope(&signer, ActionType::PayoutsClaim, params, Some(federation))?;
+    write_envelope(
+        &env,
+        "payouts-claim.json",
+        "payouts-claim",
+        "/api/operator/payouts/claim",
+    )
+}
+
+/// Local signed-envelope filenames the kit recognizes as its action trail.
+fn local_envelope_files() -> Result<Vec<std::path::PathBuf>> {
+    let dir = std::env::current_dir().context("resolving cwd")?;
+    let mut out = Vec::new();
+    if let Ok(rd) = fs::read_dir(&dir) {
+        for entry in rd.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let is_envelope = name.ends_with(".json")
+                && [
+                    "charter",
+                    "payouts",
+                    "exit",
+                    "incident",
+                    "application",
+                    "ceremony",
+                ]
+                .iter()
+                .any(|k| name.contains(k));
+            if is_envelope {
+                out.push(entry.path());
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// `oc-guardian audit log` · the kit's local action trail is the set of
+/// signed envelopes it has produced; the authoritative cross-operator log
+/// is the portal's session-gated /me/admin/audit. (`--since` reserved for
+/// when the kit keeps a timestamped local log.)
 pub fn audit_log(_since: String) -> Result<()> {
-    todo_command!("audit log")
+    let files = local_envelope_files()?;
+    println!();
+    println!("  local signed-envelope trail:");
+    if files.is_empty() {
+        println!("    (none in cwd — produce one with `charter sign`, `payouts claim`, …)");
+    } else {
+        for f in &files {
+            println!(
+                "    {}",
+                f.file_name().unwrap_or_default().to_string_lossy()
+            );
+        }
+    }
+    println!("  authoritative audit log · me.ochk.io/me/admin/audit (signed-in).");
+    println!();
+    Ok(())
 }
 
-pub fn audit_export(_out: String) -> Result<()> {
-    todo_command!("audit export")
+/// `oc-guardian audit export` · bundle the local signed envelopes into one
+/// JSON array for archival / handoff.
+pub fn audit_export(out: String) -> Result<()> {
+    let files = local_envelope_files()?;
+    let mut bundle = Vec::new();
+    for f in &files {
+        let bytes = fs::read(f).with_context(|| format!("reading {}", f.display()))?;
+        let value: serde_json::Value =
+            serde_json::from_slice(&bytes).with_context(|| format!("parsing {}", f.display()))?;
+        bundle.push(serde_json::json!({
+            "file": f.file_name().unwrap_or_default().to_string_lossy(),
+            "envelope": value,
+        }));
+    }
+    fs::write(
+        &out,
+        serde_json::to_vec_pretty(&bundle).context("encoding bundle")?,
+    )
+    .with_context(|| format!("writing {out}"))?;
+    println!();
+    println!("  ✓ exported {} signed envelope(s) → {out}", bundle.len());
+    println!();
+    Ok(())
 }
 
-pub fn exit_handoff(
-    _federation: String,
-    _replacement: String,
-    _effective_date: String,
-) -> Result<()> {
-    todo_command!("exit-handoff")
+/// `oc-guardian exit-handoff` · produce a hardware-signed `exit-handoff`
+/// envelope announcing the operator's intent to hand their seat to a
+/// replacement guardian, effective a given date.
+pub fn exit_handoff(federation: String, replacement: String, effective_date: String) -> Result<()> {
+    let (id, signer) = load_operator()?;
+    let params = serde_json::json!({
+        "operator_id": id.0,
+        "federation_slug": federation,
+        "reason": format!("exit-handoff to {replacement}, effective {effective_date}"),
+        "successor_pubkey": replacement,
+        "effective_date": effective_date,
+    });
+    let env = build_signed_envelope(&signer, ActionType::ExitHandoff, params, Some(federation))?;
+    write_envelope(
+        &env,
+        "exit-handoff.json",
+        "exit-handoff",
+        "/api/operator/exits",
+    )
 }
 
+/// `oc-guardian portal forget` · wipe local operator state — the keychain
+/// key + the config dir. Irreversible; re-init to start fresh.
 pub fn portal_forget() -> Result<()> {
-    todo_command!("portal forget")
+    let dir = resolve_dir(None)?;
+    let id = read_id(&dir)?;
+    if let Some(id) = &id {
+        let _ = keychain::delete(&id.0); // best-effort; dir removal is the source of truth
+    }
+    if dir.exists() {
+        fs::remove_dir_all(&dir).with_context(|| format!("removing {}", dir.display()))?;
+    }
+    println!();
+    println!("  ✓ forgot local operator state");
+    println!("    removed config dir {}", dir.display());
+    if id.is_some() {
+        println!("    removed keychain key");
+    }
+    println!("  re-run `oc-guardian init` to start fresh.");
+    println!();
+    Ok(())
 }
 
+/// `oc-guardian verify-status` · confirm local setup + whether this
+/// operator's pubkey is accepted (published in the public registry).
 pub fn verify_status() -> Result<()> {
-    todo_command!("verify-status")
+    use crate::portal_client::{OperatorRegistryResponse, PortalClient};
+    let (id, signer) = load_operator()?;
+    let my_pubkey = hex::encode(signer.pubkey().0);
+    let client = PortalClient::from_env(None);
+    let resp: OperatorRegistryResponse = client
+        .get_json("/api/operator/registry")
+        .context("fetching the operator registry")?;
+    let accepted = resp
+        .operators
+        .iter()
+        .any(|o| o.pubkey.eq_ignore_ascii_case(&my_pubkey));
+    println!();
+    println!("  verify · operator {}", id.0);
+    println!("    local key       ✓ present in keychain");
+    println!("    pubkey          {my_pubkey}");
+    println!(
+        "    program status  {}",
+        if accepted {
+            "✓ ACCEPTED (in OC registry)"
+        } else {
+            "✗ not yet accepted — apply via `oc-guardian apply prepare`"
+        }
+    );
+    println!();
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn iso8601_utc_epoch() {
+        assert_eq!(iso8601_utc(0), "1970-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn iso8601_utc_known_instant() {
+        // 2026-05-22T00:00:00Z = 1_779_408_000
+        assert_eq!(iso8601_utc(1_779_408_000), "2026-05-22T00:00:00Z");
+    }
+
+    #[test]
+    fn iso8601_utc_carries_time_of_day() {
+        // 2026-05-22T13:45:07Z
+        assert_eq!(
+            iso8601_utc(1_779_408_000 + 13 * 3600 + 45 * 60 + 7),
+            "2026-05-22T13:45:07Z"
+        );
+    }
 }

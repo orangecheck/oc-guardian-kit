@@ -211,6 +211,25 @@ pub struct FederationsListResponse {
     pub federations: Vec<PublicFederation>,
 }
 
+/// An accepted operator as returned by the public GET /api/operator/registry.
+/// Anonymized: operator_id (sha256-derived) + pubkey hex only.
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct RegistryOperator {
+    pub operator_id: String,
+    pub pubkey: String,
+}
+
+/// Wrapper around GET /api/operator/registry (public · no auth).
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct OperatorRegistryResponse {
+    #[serde(default)]
+    pub ok: bool,
+    #[serde(default)]
+    pub operators: Vec<RegistryOperator>,
+    #[serde(default)]
+    pub count: u32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
