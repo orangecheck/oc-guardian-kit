@@ -343,7 +343,35 @@ pub fn register(_transport: String) -> Result<()> {
 }
 
 pub fn federations_list() -> Result<()> {
-    todo_command!("federations list")
+    use crate::portal_client::{FederationsListResponse, PortalClient};
+    let client = PortalClient::from_env(None);
+    let resp: FederationsListResponse = client
+        .get_json("/api/federations")
+        .context("fetching the federation directory from the portal")?;
+    if resp.federations.is_empty() {
+        println!("no federations in the directory yet.");
+        return Ok(());
+    }
+    println!("federations ({}):", resp.federations.len());
+    println!();
+    for f in &resp.federations {
+        println!(
+            "  {:<18} {:<10} thr {:<7} target {}{}",
+            f.slug,
+            f.status,
+            f.threshold,
+            f.target_guardian_count,
+            if f.bootstrap_mode {
+                " · bootstrap"
+            } else {
+                ""
+            }
+        );
+        println!("    {}", f.name);
+    }
+    println!();
+    println!("  join one with:  oc-guardian federations join <slug>");
+    Ok(())
 }
 
 pub fn federations_join(_slug: String, _transport: String) -> Result<()> {

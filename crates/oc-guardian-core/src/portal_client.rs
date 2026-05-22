@@ -202,6 +202,15 @@ pub struct PublicFederationResponse {
     pub federation: PublicFederation,
 }
 
+/// Wrapper around the GET /api/federations directory list response.
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct FederationsListResponse {
+    #[serde(default)]
+    pub ok: bool,
+    #[serde(default)]
+    pub federations: Vec<PublicFederation>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
