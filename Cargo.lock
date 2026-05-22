@@ -726,7 +726,7 @@ dependencies = [
 
 [[package]]
 name = "oc-guardian-charter"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "ed25519-dalek",
@@ -740,7 +740,7 @@ dependencies = [
 
 [[package]]
 name = "oc-guardian-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -757,7 +757,7 @@ dependencies = [
 
 [[package]]
 name = "oc-guardian-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "dirs",
@@ -775,15 +775,21 @@ dependencies = [
 
 [[package]]
 name = "oc-guardian-fedimint"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
+ "hex",
+ "oc-guardian-core",
+ "serde",
+ "serde_json",
+ "sha2",
  "tracing",
+ "ureq",
 ]
 
 [[package]]
 name = "oc-guardian-portal-bridge"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "tracing",

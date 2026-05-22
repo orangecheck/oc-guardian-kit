@@ -232,9 +232,11 @@ enum FedimintdCommand {
         #[arg(long)]
         version: String,
     },
-    /// Run the wrapped fedimintd daemon.
+    /// Run the wrapped fedimintd daemon. Reads the runtime config from
+    /// the OC-injected env (OC_*/ports); `--config` optionally overrides
+    /// the fedimintd binary path (default: resolve from PATH).
     Run {
-        #[arg(long)]
+        #[arg(long, default_value = "auto")]
         config: String,
     },
     /// Show wrapped fedimintd's process status.

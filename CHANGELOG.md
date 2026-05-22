@@ -6,6 +6,31 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
+## 0.2.0
+
+### Added
+
+- **Real fedimintd lifecycle** (`oc-guardian fedimintd {install,run,status}`)
+  — replaces the v0.1 stubs. The guardian's main process on a Fly machine:
+  - `config` maps the OC-injected env (`OC_OPERATOR_ID`/`OC_OPERATOR_PUBKEY_HEX`/
+    `OC_FEDERATION_SLUG`/`OC_ATTESTATION_POST_URL` + ports 9000 P2P / 9001 API,
+    host from `FLY_APP_NAME`) → the `FM_*` env fedimintd reads.
+  - `install` downloads + SHA-256-verifies a pinned fedimintd release; refuses
+    unpinned versions (never installs an unverified consensus binary).
+  - `run` resolves + spawns + supervises fedimintd (restart backoff) and runs
+    the attestation ticker.
+  - `status` probes the local consensus API.
+- **Operator-signed runtime attestation** (NOT TEE) — periodic report
+  (version/federation/urls/liveness) signed by the operator key and POSTed to
+  `OC_ATTESTATION_POST_URL`. OC cannot forge it; no key present → runs but
+  doesn't attest. TEE dropped: §1A's load-bearing property is operator-key
+  control + diversity, not hardware attestation.
+- **Docker image** (`Dockerfile`) — multi-stage build of `oc-guardian` + a
+  pinned, build-time-verified fedimintd; entrypoint `oc-guardian fedimintd run`.
+  The release workflow builds, cosign-signs, and pushes
+  `ghcr.io/orangecheck/oc-guardian:<tag>` so the Fly deploy path
+  (`provisionHosted`) runs a real guardian image.
+
 ## Unreleased
 
 ### Added

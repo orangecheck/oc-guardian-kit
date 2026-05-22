@@ -9,6 +9,7 @@ permissions:
   contents: write
   id-token: write # cosign keyless OIDC + SLSA provenance attestation
   attestations: write
+  packages: write # push the oc-guardian image to ghcr.io
 
 jobs:
   build:
@@ -110,3 +111,45 @@ jobs:
           files: dist/oc-guardian-*
           fail_on_unmatched_files: true
           generate_release_notes: true
+
+  # Build + publish the guardian Docker image OrangeCheck deploys to Fly.
+  # The image bundles a pinned, SHA-256-verified fedimintd; the build
+  # fails unless the verified hash is supplied (repo variable
+  # FEDIMINTD_SHA256, pinned to FEDIMINTD_VERSION).
+  docker:
+    name: guardian image · ghcr.io
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: derive image tag
+        id: meta
+        run: echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+      - name: verify fedimintd hash is pinned
+        run: |
+          test -n "${{ vars.FEDIMINTD_SHA256 }}" \
+            || (echo "::error::set repo variable FEDIMINTD_SHA256 to the verified upstream fedimintd hash before releasing an image"; exit 1)
+      - name: build + push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/orangecheck/oc-guardian:${{ steps.meta.outputs.tag }}
+            ghcr.io/orangecheck/oc-guardian:latest
+          build-args: |
+            FEDIMINTD_VERSION=${{ vars.FEDIMINTD_VERSION || '0.7.2' }}
+            FEDIMINTD_SHA256=${{ vars.FEDIMINTD_SHA256 }}
+      - name: install cosign
+        uses: sigstore/cosign-installer@v3
+      - name: cosign keyless sign the image
+        run: |
+          cosign sign --yes \
+            ghcr.io/orangecheck/oc-guardian@${{ steps.build.outputs.digest }}
