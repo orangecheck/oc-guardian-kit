@@ -176,6 +176,47 @@ mod tests {
         assert_eq!(att.fedimintd_version, "0.7.2");
     }
 
+    // CROSS-LANGUAGE PARITY VECTOR. The me.ochk.io verifier
+    // (oc-me-web src/lib/operator/attestation.ts → canonicalAttestationBytes)
+    // re-derives the signed bytes in JS. Both sides assert against this
+    // exact literal so a field-order/escaping drift on either side fails
+    // CI immediately. If you change RuntimeAttestation, update BOTH.
+    const PARITY_VECTOR: &str = r#"{"kind":"oc-guardian-attestation","operator_id":"op-abc123","federation_slug":"oc-me-v1","hosted_request_id":null,"fedimintd_version":"0.11.1","p2p_url":"fedimint://x.fly.dev:9000","api_url":"wss://x.fly.dev:9001","status":"running","attested_at":1779408000}"#;
+
+    fn parity_attestation() -> RuntimeAttestation {
+        RuntimeAttestation {
+            kind: "oc-guardian-attestation".to_string(),
+            operator_id: "op-abc123".to_string(),
+            federation_slug: "oc-me-v1".to_string(),
+            hosted_request_id: None,
+            fedimintd_version: "0.11.1".to_string(),
+            p2p_url: "fedimint://x.fly.dev:9000".to_string(),
+            api_url: "wss://x.fly.dev:9001".to_string(),
+            status: "running".to_string(),
+            attested_at: 1_779_408_000,
+        }
+    }
+
+    #[test]
+    fn canonical_bytes_match_cross_language_vector() {
+        let s = serde_json::to_string(&parity_attestation()).unwrap();
+        assert_eq!(
+            s, PARITY_VECTOR,
+            "serde_json output drifted from the JS verifier vector"
+        );
+    }
+
+    #[test]
+    fn hosted_request_id_some_serializes_as_string_not_omitted() {
+        let mut att = parity_attestation();
+        att.hosted_request_id = Some("hr-7".to_string());
+        let s = serde_json::to_string(&att).unwrap();
+        assert!(
+            s.contains(r#""hosted_request_id":"hr-7""#),
+            "Some(_) must serialize as a string field, never be skipped: {s}"
+        );
+    }
+
     #[test]
     fn sign_is_deterministic_and_pubkey_matches() {
         let att = build(&runtime(), "0.7.2", "running", 1_700_000_000);
