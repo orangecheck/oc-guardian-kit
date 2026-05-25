@@ -21,8 +21,10 @@
 # ── Stage 1 · build the kit (oc-guardian) ────────────────────────────
 FROM rust:1.85-slim-bookworm AS kit-build
 WORKDIR /build
+# libdbus-1-dev: the `keyring` crate (operator-key storage) links the Secret
+# Service over D-Bus on Linux → libdbus-sys needs the dbus dev headers to build.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        pkg-config libssl-dev ca-certificates \
+        pkg-config libssl-dev libdbus-1-dev ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
