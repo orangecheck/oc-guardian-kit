@@ -18,3 +18,9 @@ hex.workspace = true
 sha2.workspace = true
 ureq.workspace = true
 oc-guardian-core = { workspace = true }
+
+[dev-dependencies]
+# Tests only: produce a real deterministic Ed25519 signature for the
+# cross-language settlement parity vector (verified by the portal's @noble
+# verifier). The runtime signing path goes through the core Signer.
+ed25519-dalek.workspace = true
