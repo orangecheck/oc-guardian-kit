@@ -778,6 +778,7 @@ name = "oc-guardian-fedimint"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "ed25519-dalek",
  "hex",
  "oc-guardian-core",
  "serde",
