@@ -1,6 +1,6 @@
 # BYPASS.md — every portal feature has a kit-only equivalent
 
-**Audience:** operators who want to participate in the OC guardian operator program *without ever touching the [`me.ochk.io/operator`](https://me.ochk.io/operator) portal*. This document is a first-class artifact maintained at parity with the portal — a portal feature is **not done** until its bypass is documented and verified working.
+**Audience:** operators who want to participate in the OC guardian operator program *without ever touching the [`me.ochk.io/me/operator`](https://me.ochk.io/me/operator) portal*. This document is a first-class artifact maintained at parity with the portal — a portal feature is **not done** until its bypass is documented and verified working.
 
 **Architectural commitment:** A guardian operating purely via the kit is **architecturally indistinguishable** at the federation layer from a guardian operating with the portal. Both produce the same envelopes, sign with the same operator key, and are accepted by federations and consumers identically.
 
@@ -8,11 +8,11 @@
 
 ## Table of equivalents
 
-Every row here is a portal route the operator might land on, paired with the kit-only path that does the same thing. Both paths are supported. Both are documented at parity. The kit-only path never depends on `me.ochk.io/operator` being online.
+Every row here is a portal route the operator might land on, paired with the kit-only path that does the same thing. Both paths are supported. Both are documented at parity. The kit-only path never depends on `me.ochk.io/me/operator` being online.
 
 | # | Lifecycle stage | Portal path | Kit-only equivalent |
 |---|---|---|---|
-| 01 | Apply to the program | [me.ochk.io/operator/apply](https://me.ochk.io/operator/apply) | Email `apply@ochk.io` with the application questionnaire — see [§01 below](#01-apply-to-the-program) |
+| 01 | Apply to the program | _(no portal page yet — program intake is email)_ | Email `apply@ochk.io` with the application questionnaire — see [§01 below](#01-apply-to-the-program) |
 | 02 | Get accepted + onboarded | Portal walks WebAuthn key registration in your browser | `oc-guardian init --hsm <yubikey\|ledger\|passkey\|os-keychain>` — see [§02](#02-get-accepted--onboarded) |
 | 03 | Discover federations seeking guardians | Portal lists federations with seats open | `oc-guardian federations list` (queries the same public registry directly) — see [§03](#03-discover-federations-seeking-guardians) |
 | 04 | Join a federation | Portal mediates introduction + opt-in | `oc-guardian federations join <slug>` against the federation's public coordinator URL — see [§04](#04-join-a-federation) |
@@ -30,11 +30,11 @@ Every row here is a portal route the operator might land on, paired with the kit
 
 ## §01 — Apply to the program
 
-**Portal path:** fill out [me.ochk.io/operator/apply](https://me.ochk.io/operator/apply); WebAuthn-sign the application; submit.
+**Portal path:** _no portal intake page exists yet — program applications are handled by email (the "bypass" below is the only path today). When a portal intake ships it will live under `me.ochk.io/me/operator`._
 
-**Bypass:**
+**Bypass (current path):**
 
-1. Download the application questionnaire from [me.ochk.io/operator/apply](https://me.ochk.io/operator/apply) (also tracked in this repo at [`docs/application-questionnaire.md`](./docs/application-questionnaire.md)).
+1. Get the application questionnaire from this repo at [`docs/application-questionnaire.md`](./docs/application-questionnaire.md).
 2. Fill it out. Generate an Ed25519 application key locally:
 
    ```sh
@@ -91,7 +91,7 @@ The registry is just a list of operator public keys. It's published as an OC env
 
 ## §03 — Discover federations seeking guardians
 
-**Portal path:** [me.ochk.io/operator/federations](https://me.ochk.io/operator/federations) lists federations with seats open.
+**Portal path:** [me.ochk.io/me/operator/federations](https://me.ochk.io/me/operator/federations) lists federations with seats open.
 
 **Bypass:**
 

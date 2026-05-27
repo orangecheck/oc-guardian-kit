@@ -1,10 +1,10 @@
 # oc-guardian-kit
 
-**The operator's actual control surface for running an OrangeCheck-affiliated Fedimint guardian.** Self-serve. Operator-controlled. Composes with `fedimintd` rather than replacing it. Optional companion to the [`me.ochk.io/operator`](https://me.ochk.io/operator) portal — the kit works end-to-end without ever touching the portal.
+**The operator's actual control surface for running an OrangeCheck-affiliated Fedimint guardian.** Self-serve. Operator-controlled. Composes with `fedimintd` rather than replacing it. Optional companion to the [`me.ochk.io/me/operator`](https://me.ochk.io/me/operator) portal — the kit works end-to-end without ever touching the portal.
 
 > **Architectural commitment:** OC the company never custodies funds, never operates guardians, never holds the surfaces that determine federation behavior. This kit is the tooling that makes that commitment scale.
 >
-> **Property the kit guarantees:** every action runs under operator-controlled credentials on operator-controlled infrastructure. OC has no access to your hardware, your keys, your `fedimintd`, or your operator identity at any point. The portal at `me.ochk.io/operator` is convenience, not control — it can request signatures from your hardware, but it cannot produce them.
+> **Property the kit guarantees:** every action runs under operator-controlled credentials on operator-controlled infrastructure. OC has no access to your hardware, your keys, your `fedimintd`, or your operator identity at any point. The portal at `me.ochk.io/me/operator` is convenience, not control — it can request signatures from your hardware, but it cannot produce them.
 
 ## Install
 
@@ -91,7 +91,7 @@ Every lifecycle stage of the program (recruitment → exit) has a kit command. T
 
 ## Optional portal bridge
 
-Operators who want the portal at `me.ochk.io/operator` to drive their guardian (push UI for ceremony, dashboards, signing requests) opt in via:
+Operators who want the portal at `me.ochk.io/me/operator` to drive their guardian (push UI for ceremony, dashboards, signing requests) opt in via:
 
 ```sh
 oc-guardian bridge enable                   # subscribe to portal action requests
@@ -120,4 +120,4 @@ MIT. See [LICENSE](./LICENSE).
 
 ## Why "kit" not "client"?
 
-A client implies a server it talks to. The kit implies a toolbox the operator runs against their own infrastructure. There is no central server you depend on; the portal at `me.ochk.io/operator` is one of many surfaces the kit can interoperate with, and operators can choose to use none of them.
+A client implies a server it talks to. The kit implies a toolbox the operator runs against their own infrastructure. There is no central server you depend on; the portal at `me.ochk.io/me/operator` is one of many surfaces the kit can interoperate with, and operators can choose to use none of them.
