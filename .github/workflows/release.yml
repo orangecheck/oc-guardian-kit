@@ -110,15 +110,14 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
+      # Only the binary artifacts. docker/build-push-action also uploads a
+      # build-record artifact that download-artifact cannot extract, and
+      # fetching everything failed the v0.2.1 release on it.
       - uses: actions/download-artifact@v4
         with:
           path: dist
-
-      - name: flatten artifact dir
-        run: |
-          # download-artifact creates one subdir per artifact; flatten
-          # so action-gh-release can glob them all.
-          find dist -type f -exec mv {} dist/ \;
+          pattern: oc-guardian-*
+          merge-multiple: true
 
       - name: publish github release
         uses: softprops/action-gh-release@v2
