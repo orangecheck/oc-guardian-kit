@@ -20,6 +20,12 @@ surface (CLI flags, action-envelope schemas, file paths under
   check and provenance check now match the files the release actually
   publishes.
 
+### Changed
+
+- `anyhow` 1.0.95 → 1.0.104 and `rustls` 0.23.40 → 0.23.45 (with
+  `rustls-webpki` 0.103.15), clearing RUSTSEC-2026-0190 and
+  RUSTSEC-2026-0285 from the cargo-audit and cargo-deny gates.
+
 ## 0.2.0
 
 ### Added
