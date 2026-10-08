@@ -23,8 +23,10 @@ jobs:
             os: ubuntu-24.04
           - target: aarch64-apple-darwin
             os: macos-14
+          # GitHub retired the Intel macos-13 runners, and this leg queued
+          # forever on every tag. Cross-compile for Intel on Apple silicon.
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-14
     steps:
       - uses: actions/checkout@v5
       - name: install linux deps
@@ -53,14 +55,27 @@ jobs:
             --target ${{ matrix.target }} \
             -p oc-guardian-cli
 
+      # Prove the binary is the target's architecture and runs, before signing it.
+      # The Intel macOS build runs under Rosetta on the arm64 runner.
+      - name: smoke test
+        run: |
+          bin=target/${{ matrix.target }}/release/oc-guardian
+          file "$bin"
+          if [ "${{ matrix.target }}" = x86_64-apple-darwin ]; then
+            lipo -archs "$bin" | grep -qx x86_64
+            arch -x86_64 "$bin" --version
+          else
+            "$bin" --version
+          fi
+
+      # The archive holds a single `oc-guardian`, so the README's
+      # extract-and-install steps work as written.
       - name: package
         run: |
-          mkdir -p dist
-          cp target/${{ matrix.target }}/release/oc-guardian \
-             dist/oc-guardian-${{ matrix.target }}
+          mkdir -p dist stage
+          cp target/${{ matrix.target }}/release/oc-guardian stage/oc-guardian
+          tar -czf dist/oc-guardian-${{ matrix.target }}.tar.gz -C stage oc-guardian
           cd dist
-          tar -czf oc-guardian-${{ matrix.target }}.tar.gz \
-                   oc-guardian-${{ matrix.target }}
           if command -v shasum >/dev/null 2>&1; then
             shasum -a 256 oc-guardian-${{ matrix.target }}.tar.gz \
               > oc-guardian-${{ matrix.target }}.tar.gz.sha256
