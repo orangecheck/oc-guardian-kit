@@ -9,7 +9,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 rust-version = "1.85"
 authors = ["OrangeCheck"]
@@ -40,10 +40,10 @@ ureq = { version = "=2.12.1", default-features = false, features = ["json", "tls
 # Workspace-internal · pin an explicit version alongside the path so the
 # inter-crate deps aren't wildcards (cargo-deny `wildcards = "deny"`).
 # Keep in lockstep with [workspace.package] version.
-oc-guardian-core = { path = "crates/oc-guardian-core", version = "0.2.0" }
-oc-guardian-fedimint = { path = "crates/oc-guardian-fedimint", version = "0.2.0" }
-oc-guardian-charter = { path = "crates/oc-guardian-charter", version = "0.2.0" }
-oc-guardian-portal-bridge = { path = "crates/oc-guardian-portal-bridge", version = "0.2.0" }
+oc-guardian-core = { path = "crates/oc-guardian-core", version = "0.2.1" }
+oc-guardian-fedimint = { path = "crates/oc-guardian-fedimint", version = "0.2.1" }
+oc-guardian-charter = { path = "crates/oc-guardian-charter", version = "0.2.1" }
+oc-guardian-portal-bridge = { path = "crates/oc-guardian-portal-bridge", version = "0.2.1" }
 
 [profile.release]
 # Reproducible-build friendly: no per-host non-determinism, optimize for

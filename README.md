@@ -8,38 +8,36 @@
 
 ## Install
 
-Verified-release install (recommended):
+Verified-release install (recommended). Archives exist for
+`x86_64-unknown-linux-gnu`, `aarch64-apple-darwin` and `x86_64-apple-darwin`:
 
 ```sh
+T=x86_64-unknown-linux-gnu
 # 1. Pull the signed release.
-gh release download v0.1.0 -R orangecheck/oc-guardian-kit -p '*x86_64-linux-gnu*'
+gh release download v0.2.1 -R orangecheck/oc-guardian-kit -p "oc-guardian-$T.*"
 
-# 2. Verify against the cosign attestation.
+# 2. Verify the cosign keyless signature.
 cosign verify-blob \
   --certificate-identity-regexp 'https://github.com/orangecheck/oc-guardian-kit' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  --signature oc-guardian-x86_64-linux-gnu.sig \
-  --bundle oc-guardian-x86_64-linux-gnu.bundle \
-  oc-guardian-x86_64-linux-gnu.tar.gz
+  --bundle "oc-guardian-$T.bundle" \
+  "oc-guardian-$T.tar.gz"
 
-# 3. Verify against the SLSA Level 3 provenance attestation (for reproducible-build assurance).
-slsa-verifier verify-artifact \
-  --provenance-path oc-guardian-x86_64-linux-gnu.intoto.jsonl \
-  --source-uri github.com/orangecheck/oc-guardian-kit \
-  --source-tag v0.1.0 \
-  oc-guardian-x86_64-linux-gnu.tar.gz
+# 3. Verify the build provenance attestation (SLSA v1, GitHub artifact attestations).
+gh attestation verify "oc-guardian-$T.tar.gz" -R orangecheck/oc-guardian-kit
 
 # 4. Extract + place on PATH.
-tar -xzf oc-guardian-x86_64-linux-gnu.tar.gz
+tar -xzf "oc-guardian-$T.tar.gz"
 sudo install oc-guardian /usr/local/bin/
+oc-guardian --version
 ```
 
 Build-from-source install (for the trust-no-binaries among us):
 
 ```sh
-git clone --depth 1 --branch v0.1.0 https://github.com/orangecheck/oc-guardian-kit
+git clone --depth 1 --branch v0.2.1 https://github.com/orangecheck/oc-guardian-kit
 cd oc-guardian-kit
-cargo build --release --frozen --locked --offline  # reproducible: hash matches release
+cargo build --release --locked -p oc-guardian-cli  # dependency versions pinned by Cargo.lock
 sudo install target/release/oc-guardian /usr/local/bin/
 ```
 

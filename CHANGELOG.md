@@ -6,6 +6,20 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
+## 0.2.1
+
+### Fixed
+
+- **The release workflow can publish binaries again.** Its Intel macOS
+  build waited for a `macos-13` runner, which GitHub has retired, so no tag
+  ever produced a release. The Intel build now cross-compiles on the
+  `macos-14` runner, and every build runs `--version` before it is signed
+  (the Intel binary runs under Rosetta).
+- **Each archive holds a single `oc-guardian`**, so the README's extract and
+  install steps work as written. The README's download pattern, signature
+  check and provenance check now match the files the release actually
+  publishes.
+
 ## 0.2.0
 
 ### Added
