@@ -54,7 +54,8 @@ pub enum Direction {
 
 /// The signed body. **Field order here IS the canonical signing order** —
 /// it must match the portal's `canonicalSettlementBytes` exactly. `Option`
-/// fields serialize as `null` (serde default), never omitted.
+/// fields serialize as `null` (serde default), never omitted, except
+/// `fee_sats`, which is appended only when present.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SettlementEvent {
     pub kind: SettlementKind,
@@ -81,6 +82,11 @@ pub struct SettlementEvent {
     pub destination: Option<String>,
 
     pub note: Option<String>,
+
+    /// Routing fee actually paid on an outbound payout. Absent from the bytes
+    /// when `None`, so receipts signed before it existed still verify.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fee_sats: Option<u64>,
 }
 
 /// The wire envelope the bridge POSTs to `/api/webhook/federation-settle`.
@@ -164,6 +170,7 @@ mod tests {
             operator_id: None,
             destination: None,
             note: None,
+            fee_sats: None,
         }
     }
 
@@ -214,5 +221,15 @@ mod tests {
             a.sig_hex,
             "c6d8dd32146024fcff0cd5fc289678d06c900af0f16a5ece957d2fbd37e03040c308d4bf5b90c64931915b27c62258d1f6ef380df1571fc9d55405841384180e"
         );
+    }
+
+    #[test]
+    fn fee_sats_is_appended_only_when_present() {
+        let without = String::from_utf8(canonical_bytes(&fixture()).unwrap()).unwrap();
+        assert_eq!(without, PARITY_VECTOR);
+        let mut paid = fixture();
+        paid.fee_sats = Some(3);
+        let with = String::from_utf8(canonical_bytes(&paid).unwrap()).unwrap();
+        assert!(with.ends_with(r#""note":null,"fee_sats":3}"#), "{with}");
     }
 }
