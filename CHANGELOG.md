@@ -6,6 +6,21 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
+## 0.2.2
+
+### Changed
+
+- **Operators are pointed at ochk.app.** me.ochk.io's pages now redirect to
+  ochk.app, where the operator portal lives. The CLI's printed hints, the
+  README, the bypass guide, the questionnaire and the crate homepage say
+  ochk.app/me/operator. The API the CLI calls (`me.ochk.io/api/operator/*`,
+  `/api/federations`) and the reviewer key it pins are unchanged.
+- **A settlement receipt can carry the routing fee.** An optional `fee_sats`
+  is appended to the signed receipt only when present, so receipts without
+  it sign byte-for-byte as before. The portal already accepts it.
+- `rustls` 0.23.45 → 0.23.46, clearing the four advisories that made the
+  cargo-audit and cargo-deny gates refuse every push.
+
 ## 0.2.1
 
 ### Fixed
