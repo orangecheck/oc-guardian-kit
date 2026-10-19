@@ -120,8 +120,8 @@ struct InitArgs {
 #[derive(Subcommand)]
 enum ApplyCommand {
     /// Prepare a signed application envelope from your filled-out
-    /// questionnaire. Output is `application.json` ready for email
-    /// or HTTP submission.
+    /// questionnaire. Output is `application.json`, to email to
+    /// apply@ochk.io.
     Prepare {
         #[arg(long, default_value = "application.json")]
         out: String,
