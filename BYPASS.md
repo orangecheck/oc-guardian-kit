@@ -1,6 +1,6 @@
 # BYPASS.md — every portal feature has a kit-only equivalent
 
-**Audience:** operators who want to participate in the OC guardian operator program *without ever touching the [`me.ochk.io/me/operator`](https://me.ochk.io/me/operator) portal*. This document is a first-class artifact maintained at parity with the portal — a portal feature is **not done** until its bypass is documented and verified working.
+**Audience:** operators who want to participate in the OC guardian operator program *without ever touching the [`ochk.app/me/operator`](https://ochk.app/me/operator) portal*. This document is a first-class artifact maintained at parity with the portal — a portal feature is **not done** until its bypass is documented and verified working.
 
 **Architectural commitment:** A guardian operating purely via the kit is **architecturally indistinguishable** at the federation layer from a guardian operating with the portal. Both produce the same envelopes, sign with the same operator key, and are accepted by federations and consumers identically.
 
@@ -8,7 +8,7 @@
 
 ## Table of equivalents
 
-Every row here is a portal route the operator might land on, paired with the kit-only path that does the same thing. Both paths are supported. Both are documented at parity. The kit-only path never depends on `me.ochk.io/me/operator` being online.
+Every row here is a portal route the operator might land on, paired with the kit-only path that does the same thing. Both paths are supported. Both are documented at parity. The kit-only path never depends on `ochk.app/me/operator` being online.
 
 | # | Lifecycle stage | Portal path | Kit-only equivalent |
 |---|---|---|---|
@@ -30,7 +30,7 @@ Every row here is a portal route the operator might land on, paired with the kit
 
 ## §01 — Apply to the program
 
-**Portal path:** _no portal intake page exists yet — program applications are handled by email (the "bypass" below is the only path today). When a portal intake ships it will live under `me.ochk.io/me/operator`._
+**Portal path:** _no portal intake page exists yet — program applications are handled by email (the "bypass" below is the only path today). When a portal intake ships it will live under `ochk.app/me/operator`._
 
 **Bypass (current path):**
 
@@ -91,7 +91,7 @@ The registry is just a list of operator public keys. It's published as an OC env
 
 ## §03 — Discover federations seeking guardians
 
-**Portal path:** [me.ochk.io/me/operator/federations](https://me.ochk.io/me/operator/federations) lists federations with seats open.
+**Portal path:** [ochk.app/me/operator/federations](https://ochk.app/me/operator/federations) lists federations with seats open.
 
 **Bypass:**
 

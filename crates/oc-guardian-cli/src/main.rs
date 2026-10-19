@@ -21,7 +21,7 @@ use tracing::info;
     about = "OC guardian operator toolkit",
     long_about = "Self-serve provisioning + operations toolkit for running an \
                   OC-affiliated Fedimint guardian. Optional companion to the \
-                  operator portal at me.ochk.io/operator — the kit works \
+                  operator portal at ochk.app/me/operator — the kit works \
                   end-to-end without ever touching the portal. See BYPASS.md \
                   for the canonical mapping."
 )]

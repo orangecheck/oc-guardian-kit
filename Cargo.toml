@@ -15,7 +15,7 @@ rust-version = "1.85"
 authors = ["OrangeCheck"]
 license = "MIT"
 repository = "https://github.com/orangecheck/oc-guardian-kit"
-homepage = "https://me.ochk.io/operator"
+homepage = "https://ochk.app/me/operator"
 
 [workspace.dependencies]
 # Pinned for reproducible builds. Bump deliberately.

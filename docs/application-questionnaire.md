@@ -2,7 +2,7 @@
 
 The OC guardian operator program admits applicants who can credibly run an independent Fedimint guardian on infrastructure they control, in good faith, for the long term.
 
-This questionnaire is the same whether you submit it via the [`me.ochk.io/operator/apply`](https://me.ochk.io/operator/apply) portal or by emailing it to `apply@ochk.io`. The portal renders the same fields; the email path is documented in `BYPASS.md §01`.
+Submit this questionnaire by emailing it to `apply@ochk.io`. No portal intake page exists yet; the email path is documented in `BYPASS.md §01`. If one ships under [`ochk.app/me/operator`](https://ochk.app/me/operator), it will render the same fields.
 
 Fill out every section. Sign the resulting JSON envelope with your operator key:
 

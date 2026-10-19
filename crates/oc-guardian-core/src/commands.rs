@@ -372,7 +372,7 @@ fn build_signed_envelope(
 /// Write a signed envelope to disk + print portal-submission guidance.
 /// The operator endpoints are session-gated (the kit is not signed-in), so
 /// the kit's job is to PRODUCE the hardware-signed envelope; the operator
-/// submits it via the authenticated me.ochk.io surface — same pattern as
+/// submits it via the signed-in ochk.app surface — same pattern as
 /// `charter sign`.
 fn write_envelope(env: &ActionEnvelope, out: &str, what: &str, submit_path: &str) -> Result<()> {
     let json = serde_json::to_vec_pretty(env).context("encoding envelope")?;
@@ -380,7 +380,7 @@ fn write_envelope(env: &ActionEnvelope, out: &str, what: &str, submit_path: &str
     println!();
     println!("  ✓ signed {what} envelope written to {out}");
     println!("    it carries your hardware-key signature · OC cannot forge it.");
-    println!("    submit it signed-in at the matching me.ochk.io/me/operator surface");
+    println!("    submit it signed-in at the matching ochk.app/me/operator surface");
     println!("    (the portal POSTs it to {submit_path}).");
     println!();
     Ok(())
@@ -595,7 +595,7 @@ pub fn alerts_subscribe(federation: String) -> Result<()> {
     println!();
     println!("  alert delivery for {federation} is a portal-bridge feature:");
     println!("    oc-guardian bridge enable    # opt into portal-mediated signed requests");
-    println!("  published incidents are visible at me.ochk.io/me/operator (incidents)");
+    println!("  published incidents are visible at ochk.app/me/operator/incidents");
     println!("  and the public /federations timeline.");
     println!();
     Ok(())
@@ -630,7 +630,7 @@ pub fn payouts_list(federation: String) -> Result<()> {
     println!();
     println!("  payouts · operator {} · federation {federation}", id.0);
     println!("    accrued figures are session-gated — view them signed-in at");
-    println!("    me.ochk.io/me/operator. To withdraw, produce a signed claim:");
+    println!("    ochk.app/me/operator/payouts. To withdraw, produce a signed claim:");
     println!("      oc-guardian payouts claim --federation {federation} --to <bc1q…>");
     println!();
     Ok(())
@@ -699,7 +699,7 @@ pub fn audit_log(_since: String) -> Result<()> {
             );
         }
     }
-    println!("  authoritative audit log · me.ochk.io/me/admin/audit (signed-in).");
+    println!("  authoritative audit log · ochk.app/me/admin/audit (signed-in).");
     println!();
     Ok(())
 }
