@@ -60,7 +60,7 @@ pub fn fetch(slug: String) -> Result<()> {
         warn!(
             "the meta for `{}` reports version `{}` · this is the v0-pending fallback for an \
              unknown federation slug, not a real charter. Do not sign this. The OC-managed \
-             oc-me-v1 federation's canonical charter is at docs.ochk.io/federation/oc-me-v1; \
+             oc-me-v1 federation's canonical charter is at ochk.io/docs/federation/oc-me-v1; \
              self-serve federations get their charter computed at seat-assignment time.",
             resp.meta.federation_slug, resp.meta.charter_version
         );
@@ -106,7 +106,7 @@ pub fn sign(slug: String, out: String, hsm: String) -> Result<()> {
             "refusing to sign · the meta for `{slug}` reports version `{}`, which is the \
              v0-pending fallback for an unknown federation slug, not a real charter. \
              Verify the slug and re-run. The OC-managed oc-me-v1 charter is at \
-             docs.ochk.io/federation/oc-me-v1.",
+             ochk.io/docs/federation/oc-me-v1.",
             meta.charter_version
         ));
     }

@@ -270,7 +270,7 @@ mod tests {
             "federation_slug": "oc-me-v1",
             "charter_hash": "abc123",
             "charter_version": "v1.0.0",
-            "charter_url": "https://docs.ochk.io/charter",
+            "charter_url": "https://ochk.io/docs/charter",
             "published_at": "2026-05-06T00:00:00.000Z"
         }"#;
         let m: CharterMeta = serde_json::from_str(json).unwrap();
