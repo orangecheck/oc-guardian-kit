@@ -48,9 +48,8 @@ A hostile OC has no path to your funds, your federation's threshold-signing, or 
 
 Email `security@ochk.io` (or PGP to the key fingerprint published at `https://ochk.io/.well-known/security.txt`).
 
-We aim to respond within 72 hours. Coordinated-disclosure policy:
+We aim to reply to every report within 30 days. We can't promise a time to a fix yet. Coordinated-disclosure policy:
 
-- We commit to fixing high/critical vulnerabilities within 30 days and shipping a release.
 - We commit to publishing a post-mortem with technical detail and crediting the reporter (unless they prefer anonymity).
 - We commit to backporting fixes to the previous minor release line for 90 days after a major version bump.
 - We do not currently offer a paid bounty program; we will credit responsibly-disclosed reports prominently in release notes and CHANGELOG.
