@@ -46,7 +46,7 @@ A hostile OC has no path to your funds, your federation's threshold-signing, or 
 
 ## Reporting vulnerabilities
 
-Email `security@ochk.io` (or PGP to the key fingerprint published at `https://ochk.io/.well-known/security.txt`).
+Email `security@ochk.io`.
 
 We aim to reply to every report within 30 days. We can't promise a time to a fix yet. Coordinated-disclosure policy:
 
