@@ -806,6 +806,67 @@ pub fn exit_handoff(federation: String, replacement: String, effective_date: Str
     )
 }
 
+/// `oc-guardian exit-ratify` · countersign another guardian's exit. The exit
+/// is ratified once the guardians staying reach the charter threshold. The
+/// envelope names a recent block (height and hash from any explorer), so it
+/// cannot have been signed long before it is posted.
+pub fn exit_ratify(
+    federation: String,
+    exit_id: String,
+    block_height: u64,
+    block_hash: String,
+    note: Option<String>,
+) -> Result<()> {
+    let (id, signer) = load_operator()?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock before epoch")?
+        .as_secs();
+    let params = exit_ratify_params(
+        &id.0,
+        &federation,
+        &exit_id,
+        block_height,
+        &block_hash,
+        note,
+        now,
+    )?;
+    let env = build_signed_envelope(&signer, ActionType::ExitRatify, params, Some(federation))?;
+    write_envelope(
+        &env,
+        "exit-ratify.json",
+        "exit-ratify",
+        &format!("/api/operator/exits/{exit_id}/ratify"),
+    )
+}
+
+fn exit_ratify_params(
+    operator_id: &str,
+    federation: &str,
+    exit_id: &str,
+    block_height: u64,
+    block_hash: &str,
+    note: Option<String>,
+    now_secs: u64,
+) -> Result<serde_json::Value> {
+    let block_hash = block_hash.trim().to_lowercase();
+    if block_hash.len() != 64 || !block_hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+        anyhow::bail!("--block-hash must be a 64-hex block hash");
+    }
+    let mut params = serde_json::json!({
+        "exit_id": exit_id,
+        "federation_slug": federation,
+        "ratifier_operator_id": operator_id,
+        "signed_at": iso8601_utc(now_secs),
+        "block_height": block_height,
+        "block_hash": block_hash,
+    });
+    if let Some(note) = note {
+        params["note"] = serde_json::Value::String(note);
+    }
+    Ok(params)
+}
+
 /// `oc-guardian portal forget` · wipe local operator state — the keychain
 /// key + the config dir. Irreversible; re-init to start fresh.
 pub fn portal_forget() -> Result<()> {
@@ -873,6 +934,25 @@ mod tests {
         assert!(whole.get("amount_sats").is_none());
         assert!(payouts_claim_params("op-1", "f", "bc1qexample", None, 0).is_err());
         assert!(payouts_claim_params("op-1", "f", "op@wallet.example", Some(0), 0).is_err());
+    }
+
+    #[test]
+    fn exit_ratify_names_a_block_the_portal_checks() {
+        let p = exit_ratify_params(
+            "op-2",
+            "oc-mutiny-v1",
+            "exit_1",
+            900_000,
+            &"AB".repeat(32),
+            None,
+            0,
+        )
+        .unwrap();
+        assert_eq!(p["block_height"], 900_000);
+        assert_eq!(p["block_hash"], "ab".repeat(32));
+        assert_eq!(p["ratifier_operator_id"], "op-2");
+        assert!(p.get("note").is_none());
+        assert!(exit_ratify_params("op-2", "f", "e", 1, "zz", None, 0).is_err());
     }
 
     #[test]

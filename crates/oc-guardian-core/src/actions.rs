@@ -38,6 +38,8 @@ pub enum ActionType {
     CharterSign,
     /// Operator coordinates exit-handoff to a replacement guardian.
     ExitHandoff,
+    /// Another guardian countersigns that exit.
+    ExitRatify,
     /// Operator claims accrued payouts.
     PayoutsClaim,
     /// Operator publishes an incident alert.
@@ -315,6 +317,10 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&ActionType::ExitHandoff).unwrap(),
             "\"exit-handoff\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ActionType::ExitRatify).unwrap(),
+            "\"exit-ratify\""
         );
         assert_eq!(
             serde_json::to_string(&ActionType::PayoutsClaim).unwrap(),

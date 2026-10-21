@@ -91,6 +91,9 @@ enum Command {
     /// Bypass for portal §12.
     ExitHandoff(ExitHandoffArgs),
 
+    /// Countersign another guardian's exit.
+    ExitRatify(ExitRatifyArgs),
+
     /// Optional bridge: opt in to portal-mediated signed action requests.
     #[command(subcommand)]
     Bridge(BridgeCommand),
@@ -298,6 +301,21 @@ struct ExitHandoffArgs {
     effective_date: String,
 }
 
+#[derive(Parser)]
+struct ExitRatifyArgs {
+    #[arg(long)]
+    federation: String,
+    #[arg(long)]
+    exit_id: String,
+    /// A recent block's height and hash, from any explorer.
+    #[arg(long)]
+    block_height: u64,
+    #[arg(long)]
+    block_hash: String,
+    #[arg(long)]
+    note: Option<String>,
+}
+
 #[derive(Subcommand)]
 enum BridgeCommand {
     /// Opt in to portal-mediated signed action requests.
@@ -393,6 +411,13 @@ fn main() -> Result<()> {
             args.federation,
             args.replacement,
             args.effective_date,
+        ),
+        Command::ExitRatify(args) => oc_guardian_core::commands::exit_ratify(
+            args.federation,
+            args.exit_id,
+            args.block_height,
+            args.block_hash,
+            args.note,
         ),
         Command::Bridge(cmd) => match cmd {
             BridgeCommand::Enable => oc_guardian_portal_bridge::enable(),
