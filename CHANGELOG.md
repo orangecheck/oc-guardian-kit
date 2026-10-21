@@ -6,6 +6,24 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
+## 0.2.5
+
+### Added
+
+- **`oc-guardian attest-delegate`.** Signs, with the operator key, a
+  delegation that lets a hosted guardian's own key sign the seat's liveness
+  attestations, until `--days` from now (180 by default, 366 at most). It
+  names a recent block and writes `attest-delegation.json` in the shape the
+  portal takes. A test pins its signature to the one the portal's own code
+  makes. The portal's "Let this guardian attest" button now has a kit
+  equivalent.
+
+### Changed
+
+- **BYPASS.md says how parity is tested today.** It described a bypass test
+  suite and a PR check that do not exist. It now lists the cross-language
+  tests that do, and says the end-to-end suite waits on the test federation.
+
 ## 0.2.4
 
 ### Added

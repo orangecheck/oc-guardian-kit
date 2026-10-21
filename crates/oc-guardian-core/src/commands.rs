@@ -840,6 +840,154 @@ pub fn exit_ratify(
     )
 }
 
+/// The longest a delegation may run, as the portal caps it.
+pub const ATTEST_DELEGATION_MAX_DAYS: u64 = 366;
+
+/// A seat operator's permission for another key to sign the seat's liveness
+/// attestations: how a guardian on hosted hardware, which never holds the
+/// operator key, attests at all. The portal's `AttestDelegation`, field for
+/// field.
+#[derive(Debug, serde::Serialize)]
+pub struct AttestDelegation {
+    pub federation_slug: String,
+    pub seat_index: u32,
+    pub operator_pubkey: String,
+    pub attest_pubkey: String,
+    pub not_after: u64,
+    pub block_height: u64,
+    pub block_hash: String,
+    pub sig: String,
+}
+
+/// The bytes a delegation signs. oc-me-web `canonicalDelegationBytes`, line
+/// for line; the cross-language test below pins it.
+fn attest_delegation_bytes(
+    federation_slug: &str,
+    seat_index: u32,
+    operator_pubkey: &str,
+    attest_pubkey: &str,
+    not_after: u64,
+    block_height: u64,
+    block_hash: &str,
+) -> Vec<u8> {
+    [
+        "oc-me/attest-delegation/v1".to_string(),
+        format!(
+            "federation_slug: {}:{}",
+            federation_slug.len(),
+            federation_slug
+        ),
+        format!("seat_index: {seat_index}"),
+        format!("operator_pubkey: {operator_pubkey}"),
+        format!("attest_pubkey: {attest_pubkey}"),
+        format!("not_after: {not_after}"),
+        format!("block_height: {block_height}"),
+        format!("block_hash: {block_hash}"),
+    ]
+    .join("\n")
+    .into_bytes()
+}
+
+fn hex64(value: &str, flag: &str) -> Result<String> {
+    let v = value.trim().to_lowercase();
+    if v.len() != 64 || !v.bytes().all(|b| b.is_ascii_hexdigit()) {
+        anyhow::bail!("{flag} must be 64 hex characters");
+    }
+    Ok(v)
+}
+
+/// Sign a delegation with the seat operator's key. Pure apart from the
+/// signer, so the test can pin it against the portal's own signer.
+#[allow(clippy::too_many_arguments)]
+fn sign_attest_delegation(
+    signer: &impl Signer,
+    federation_slug: &str,
+    seat_index: u32,
+    attest_pubkey: &str,
+    days: u64,
+    block_height: u64,
+    block_hash: &str,
+    now_secs: u64,
+) -> Result<AttestDelegation> {
+    if !federation_slug.is_ascii() || federation_slug.is_empty() {
+        anyhow::bail!("--federation must be a federation slug");
+    }
+    if days == 0 || days > ATTEST_DELEGATION_MAX_DAYS {
+        anyhow::bail!("--days must be between 1 and {ATTEST_DELEGATION_MAX_DAYS}");
+    }
+    let attest_pubkey = hex64(attest_pubkey, "--attest-pubkey")?;
+    let block_hash = hex64(block_hash, "--block-hash")?;
+    let operator_pubkey = hex::encode(signer.pubkey().0);
+    let not_after = now_secs + days * 86_400;
+    let bytes = attest_delegation_bytes(
+        federation_slug,
+        seat_index,
+        &operator_pubkey,
+        &attest_pubkey,
+        not_after,
+        block_height,
+        &block_hash,
+    );
+    let sig = signer.sign(&bytes).context("signing the delegation")?;
+    Ok(AttestDelegation {
+        federation_slug: federation_slug.to_string(),
+        seat_index,
+        operator_pubkey,
+        attest_pubkey,
+        not_after,
+        block_height,
+        block_hash,
+        sig: hex::encode(sig),
+    })
+}
+
+/// `oc-guardian attest-delegate` · let a hosted guardian's own key sign this
+/// seat's liveness attestations, until `--days` from now. The key signs
+/// liveness and nothing else; the charter, payouts, exits and votes still
+/// take the operator key. Its pubkey is on the seat's hosted status at
+/// ochk.app. Names a recent block, which the portal checks.
+#[allow(clippy::too_many_arguments)]
+pub fn attest_delegate(
+    federation: String,
+    seat_index: u32,
+    attest_pubkey: String,
+    days: u64,
+    block_height: u64,
+    block_hash: String,
+    out: String,
+) -> Result<()> {
+    let (_id, signer) = load_operator()?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock before epoch")?
+        .as_secs();
+    let delegation = sign_attest_delegation(
+        &signer,
+        &federation,
+        seat_index,
+        &attest_pubkey,
+        days,
+        block_height,
+        &block_hash,
+        now,
+    )?;
+    let json = serde_json::to_vec_pretty(&serde_json::json!({ "delegation": delegation }))
+        .context("encoding delegation")?;
+    fs::write(&out, &json).with_context(|| format!("writing {out}"))?;
+    println!();
+    println!("  ✓ signed attest delegation written to {out}");
+    println!(
+        "    seat {seat_index} of {federation} · key {} · until {}",
+        delegation.attest_pubkey,
+        iso8601_utc(delegation.not_after)
+    );
+    println!("    submit it signed-in: the portal takes it at");
+    println!("    /api/operator/federations/{federation}/seats/{seat_index}/attest-delegation");
+    println!("    (body as written). Revoke it from the seat's hosted status on ochk.app.");
+    println!();
+    Ok(())
+}
+
 fn exit_ratify_params(
     operator_id: &str,
     federation: &str,
@@ -934,6 +1082,55 @@ mod tests {
         assert!(whole.get("amount_sats").is_none());
         assert!(payouts_claim_params("op-1", "f", "bc1qexample", None, 0).is_err());
         assert!(payouts_claim_params("op-1", "f", "op@wallet.example", Some(0), 0).is_err());
+    }
+
+    /// Produced by oc-me-web's `signAttestDelegation` with the same key and
+    /// fields; the portal verified it. A drift in either side's bytes breaks it.
+    #[test]
+    fn attest_delegation_matches_the_portals_signer() {
+        let signer = keychain::StaticSigner::from_hex(&"07".repeat(32)).unwrap();
+        let machine = keychain::StaticSigner::from_hex(&"08".repeat(32)).unwrap();
+        let attest = hex::encode(machine.pubkey().0);
+        let now = 1_800_000_000 - 30 * 86_400;
+        let d = sign_attest_delegation(
+            &signer,
+            "oc-mutiny-v1",
+            2,
+            &attest.to_uppercase(),
+            30,
+            900_000,
+            &"AB".repeat(32),
+            now,
+        )
+        .unwrap();
+        assert_eq!(
+            d.operator_pubkey,
+            "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c"
+        );
+        assert_eq!(
+            d.attest_pubkey,
+            "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca"
+        );
+        assert_eq!(d.not_after, 1_800_000_000);
+        assert_eq!(d.block_hash, "ab".repeat(32));
+        assert_eq!(
+            d.sig,
+            "126436c597704b1a4daed8576d18d02869311e4397d21cc425a871bed46c906d\
+             8db2845b46916aa9dba44cf5676f2d3dd1d2055c42a937568d60d6bb63fd7208"
+        );
+    }
+
+    #[test]
+    fn attest_delegation_refuses_what_the_portal_would() {
+        let signer = keychain::StaticSigner::from_hex(&"07".repeat(32)).unwrap();
+        let key = "11".repeat(32);
+        let hash = "ab".repeat(32);
+        assert!(sign_attest_delegation(&signer, "f", 0, &key, 367, 1, &hash, 0).is_err());
+        assert!(sign_attest_delegation(&signer, "f", 0, &key, 0, 1, &hash, 0).is_err());
+        assert!(sign_attest_delegation(&signer, "f", 0, "zz", 30, 1, &hash, 0).is_err());
+        assert!(sign_attest_delegation(&signer, "f", 0, &key, 30, 1, "zz", 0).is_err());
+        assert!(sign_attest_delegation(&signer, "", 0, &key, 30, 1, &hash, 0).is_err());
+        assert!(sign_attest_delegation(&signer, "f", 0, &key, 366, 1, &hash, 0).is_ok());
     }
 
     #[test]

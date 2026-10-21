@@ -12,7 +12,7 @@ Every row here is a portal route the operator might land on, paired with the kit
 
 | # | Lifecycle stage | Portal path | Kit-only equivalent |
 |---|---|---|---|
-| 01 | Apply to the program | _(no portal page yet — program intake is email)_ | Email `apply@ochk.io` with the application questionnaire — see [§01 below](#01-apply-to-the-program) |
+| 01 | Apply to the program | `ochk.app/me/operator/apply`: paste your answers, signed with the key in your browser | Email `apply@ochk.io` with the application questionnaire — see [§01 below](#01-apply-to-the-program) |
 | 02 | Get accepted + onboarded | Portal walks WebAuthn key registration in your browser | `oc-guardian init --hsm <yubikey\|ledger\|passkey\|os-keychain>` — see [§02](#02-get-accepted--onboarded) |
 | 03 | Discover federations seeking guardians | Portal lists federations with seats open | `oc-guardian federations list` (queries the same public registry directly) — see [§03](#03-discover-federations-seeking-guardians) |
 | 04 | Join a federation | Portal mediates introduction + opt-in | `oc-guardian federations join <slug>` against the federation's public coordinator URL — see [§04](#04-join-a-federation) |
@@ -25,14 +25,15 @@ Every row here is a portal route the operator might land on, paired with the kit
 | 11 | Track payouts | Portal shows accrued payouts + claim button | `oc-guardian payouts list` queries the federation's payout ledger directly — see [§11](#11-track-payouts) |
 | 12 | Graceful exit | Portal coordinates handoff to replacement | `oc-guardian exit-handoff <replacement-pubkey>` + bilateral peer communication — see [§12](#12-graceful-exit) |
 | 13 | Deauthenticate from portal | Portal "delete account" button | `oc-guardian bridge disable` + ignore the portal forever; your guardian is unaffected — see [§13](#13-deauthenticate-from-portal) |
+| 14 | Let a hosted guardian attest | "Let this guardian attest" on the seat's hosted status | `oc-guardian attest-delegate --federation <slug> --seat <n> --attest-pubkey <hex> --block-height <h> --block-hash <hash>` — see [§14](#14-let-a-hosted-guardian-attest) |
 
 ---
 
 ## §01 — Apply to the program
 
-**Portal path:** _no portal intake page exists yet — program applications are handled by email (the "bypass" below is the only path today). When a portal intake ships it will live under `ochk.app/me/operator`._
+**Portal path:** `ochk.app/me/operator/apply`. Paste your answers; the key in your browser signs them, with proof that your account holds that key, and a reviewer reads them.
 
-**Bypass (current path):**
+**Bypass:**
 
 1. Get the application questionnaire from this repo at [`docs/application-questionnaire.md`](./docs/application-questionnaire.md).
 2. Fill it out. Generate an Ed25519 application key locally:
@@ -298,16 +299,37 @@ Or: never run those commands. Your guardian is unaffected by the portal's existe
 
 ---
 
+## §14 — Let a hosted guardian attest
+
+**Portal path:** "Let this guardian attest" on the seat's hosted status at `ochk.app/me/operator/federations/<slug>`.
+
+A guardian on orangecheck-hosted hardware never holds your operator key, so it signs its liveness attestations with a key of its own. Its attestations count for your seat only once you sign a delegation to that key. The key signs liveness and nothing else, and a hosted guardian's liveness is only as independent as orangecheck, which runs the machine.
+
+**Bypass:**
+
+```sh
+# The machine key is on the seat's hosted status. Take any recent block.
+oc-guardian attest-delegate \
+    --federation <slug> \
+    --seat 0 \
+    --attest-pubkey <64-hex machine key> \
+    --days 180 \
+    --block-height <recent height> \
+    --block-hash <its hash>
+```
+
+Writes `attest-delegation.json`, signed with your operator key, in the shape the portal takes at `/api/operator/federations/<slug>/seats/<n>/attest-delegation`. `--seat` counts from 0: the portal's "Seat 1" is 0. A delegation runs at most 366 days. Revoking one is the portal's button; it needs no signature, because revoking only narrows what a key may do.
+
+---
+
 ## How we test bypass parity
 
-Every release runs the bypass test suite (`tests/bypass/`) which exercises the kit-only path for each of §01-§13 against a live test federation. The test asserts that the resulting envelope, signature, and on-the-wire protocol output is byte-for-byte identical to what the portal-mediated path produces.
+Some of what the kit signs is pinned by a cross-language test, where bytes or a signature made by one side's code are checked by the other's: runtime attestations, settlement receipts, the operator id derived from a key, and attest delegations. The other envelopes (application, charter signature, payout claim, exit and ratification) are checked against the portal's validators by hand, not yet by a shared test.
 
-A release is blocked if any bypass test fails. The portal cannot ship a feature whose bypass path doesn't work.
+There is no end-to-end bypass suite against a live federation yet. It runs on the test federation once that is up.
 
 ---
 
 ## Maintenance
 
-When a portal feature changes, this file changes in the same PR. The PR template enforces: "Did you update BYPASS.md?" — answer must be yes for any feature that touches the portal's `pages/`, `pages/api/`, or any operator-facing flow.
-
-Bypass parity is a tested, enforced, first-class architectural property — not a documentation aspiration.
+When a portal feature changes, this file changes with it, and a feature that touches what an operator signs gets a cross-language test on both sides.

@@ -94,6 +94,9 @@ enum Command {
     /// Countersign another guardian's exit.
     ExitRatify(ExitRatifyArgs),
 
+    /// Let a hosted guardian's own key sign this seat's liveness attestations.
+    AttestDelegate(AttestDelegateArgs),
+
     /// Optional bridge: opt in to portal-mediated signed action requests.
     #[command(subcommand)]
     Bridge(BridgeCommand),
@@ -316,6 +319,28 @@ struct ExitRatifyArgs {
     note: Option<String>,
 }
 
+#[derive(Parser)]
+struct AttestDelegateArgs {
+    #[arg(long)]
+    federation: String,
+    /// The seat's index from 0: ochk.app's "Seat 1" is 0.
+    #[arg(long)]
+    seat: u32,
+    /// The machine's attestation pubkey, from the seat's hosted status.
+    #[arg(long)]
+    attest_pubkey: String,
+    /// How long it counts for.
+    #[arg(long, default_value_t = 180)]
+    days: u64,
+    /// A recent block's height and hash, from any explorer.
+    #[arg(long)]
+    block_height: u64,
+    #[arg(long)]
+    block_hash: String,
+    #[arg(long, default_value = "attest-delegation.json")]
+    out: String,
+}
+
 #[derive(Subcommand)]
 enum BridgeCommand {
     /// Opt in to portal-mediated signed action requests.
@@ -418,6 +443,15 @@ fn main() -> Result<()> {
             args.block_height,
             args.block_hash,
             args.note,
+        ),
+        Command::AttestDelegate(args) => oc_guardian_core::commands::attest_delegate(
+            args.federation,
+            args.seat,
+            args.attest_pubkey,
+            args.days,
+            args.block_height,
+            args.block_hash,
+            args.out,
         ),
         Command::Bridge(cmd) => match cmd {
             BridgeCommand::Enable => oc_guardian_portal_bridge::enable(),
