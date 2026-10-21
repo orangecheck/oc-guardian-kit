@@ -262,11 +262,15 @@ enum AlertsCommand {
 enum PayoutsCommand {
     /// List accrued payouts for a federation.
     List { federation: String },
-    /// Claim accrued payouts to a Bitcoin address.
+    /// Claim accrued payouts to a Lightning address.
     Claim {
         federation: String,
+        /// The Lightning address to be paid (you@wallet.example).
         #[arg(long)]
         to: String,
+        /// Sats to claim; the whole distributed, unpaid balance when omitted.
+        #[arg(long)]
+        amount: Option<u64>,
     },
 }
 
@@ -375,9 +379,11 @@ fn main() -> Result<()> {
             PayoutsCommand::List { federation } => {
                 oc_guardian_core::commands::payouts_list(federation)
             }
-            PayoutsCommand::Claim { federation, to } => {
-                oc_guardian_core::commands::payouts_claim(federation, to)
-            }
+            PayoutsCommand::Claim {
+                federation,
+                to,
+                amount,
+            } => oc_guardian_core::commands::payouts_claim(federation, to, amount),
         },
         Command::Audit(cmd) => match cmd {
             AuditCommand::Log { since } => oc_guardian_core::commands::audit_log(since),

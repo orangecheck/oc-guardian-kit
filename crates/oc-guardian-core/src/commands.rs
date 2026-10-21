@@ -631,20 +631,22 @@ pub fn payouts_list(federation: String) -> Result<()> {
     println!("  payouts · operator {} · federation {federation}", id.0);
     println!("    accrued figures are session-gated — view them signed-in at");
     println!("    ochk.app/me/operator/payouts. To withdraw, produce a signed claim:");
-    println!("      oc-guardian payouts claim --federation {federation} --to <bc1q…>");
+    println!(
+        "      oc-guardian payouts claim {federation} --to <you@wallet.example> [--amount <sats>]"
+    );
     println!();
     Ok(())
 }
 
 /// `oc-guardian payouts claim` · produce a hardware-signed `payouts-claim`
-/// envelope directing accrued payouts to a Bitcoin destination.
-pub fn payouts_claim(federation: String, to: String) -> Result<()> {
+/// envelope directing accrued payouts to a Lightning address.
+pub fn payouts_claim(federation: String, to: String, amount: Option<u64>) -> Result<()> {
     let (id, signer) = load_operator()?;
-    let params = serde_json::json!({
-        "operator_id": id.0,
-        "destination": to,
-        "federation_slug": federation,
-    });
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock before epoch")?
+        .as_secs();
+    let params = payouts_claim_params(&id.0, &federation, &to, amount, now)?;
     let env = build_signed_envelope(&signer, ActionType::PayoutsClaim, params, Some(federation))?;
     write_envelope(
         &env,
@@ -652,6 +654,39 @@ pub fn payouts_claim(federation: String, to: String) -> Result<()> {
         "payouts-claim",
         "/api/operator/payouts/claim",
     )
+}
+
+/// The claim's signed params. The portal requires `signed_at`, and refused
+/// every claim the kit made without it. A payout is paid over Lightning, so
+/// the destination is a Lightning address; an on-chain address could never
+/// be paid.
+fn payouts_claim_params(
+    operator_id: &str,
+    federation: &str,
+    to: &str,
+    amount: Option<u64>,
+    now_secs: u64,
+) -> Result<serde_json::Value> {
+    let to = to.trim();
+    let looks_like_ln_address = to
+        .split_once('@')
+        .is_some_and(|(user, domain)| !user.is_empty() && domain.contains('.'));
+    if !looks_like_ln_address {
+        anyhow::bail!("--to must be a Lightning address (you@wallet.example); payouts are paid over Lightning");
+    }
+    if amount == Some(0) {
+        anyhow::bail!("--amount must be above zero, or omitted to claim the whole balance");
+    }
+    let mut params = serde_json::json!({
+        "operator_id": operator_id,
+        "destination": to,
+        "federation_slug": federation,
+        "signed_at": iso8601_utc(now_secs),
+    });
+    if let Some(sats) = amount {
+        params["amount_sats"] = serde_json::json!(sats);
+    }
+    Ok(params)
 }
 
 /// Local signed-envelope filenames the kit recognizes as its action trail.
@@ -826,6 +861,19 @@ pub fn verify_status() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn payouts_claim_carries_signed_at_and_a_lightning_destination() {
+        let p = payouts_claim_params("op-1", "oc-mutiny-v1", "op@wallet.example", Some(2100), 0)
+            .unwrap();
+        assert_eq!(p["signed_at"], "1970-01-01T00:00:00Z");
+        assert_eq!(p["destination"], "op@wallet.example");
+        assert_eq!(p["amount_sats"], 2100);
+        let whole = payouts_claim_params("op-1", "f", "op@wallet.example", None, 0).unwrap();
+        assert!(whole.get("amount_sats").is_none());
+        assert!(payouts_claim_params("op-1", "f", "bc1qexample", None, 0).is_err());
+        assert!(payouts_claim_params("op-1", "f", "op@wallet.example", Some(0), 0).is_err());
+    }
 
     #[test]
     fn iso8601_utc_epoch() {
