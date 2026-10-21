@@ -33,11 +33,12 @@ pub const DEFAULT_UI_PORT: u16 = 8175;
 pub enum BitcoinBackend {
     /// `FM_ESPLORA_URL` — e.g. https://mempool.space/api.
     Esplora { url: String },
-    /// `FM_BITCOIND_URL` (+ optional username/password).
+    /// `FM_BITCOIND_URL` + `FM_BITCOIND_USERNAME` + `FM_BITCOIND_PASSWORD`;
+    /// fedimintd panics at boot if either credential is missing.
     Bitcoind {
         url: String,
-        username: Option<String>,
-        password: Option<String>,
+        username: String,
+        password: String,
     },
 }
 
@@ -111,10 +112,15 @@ impl FedimintdRuntime {
         // an explicit bitcoind URL; else an Esplora URL. Required.
         let nonempty = |k: &str| get(k).filter(|v| !v.is_empty());
         let bitcoin_backend = if let Some(url) = nonempty("OC_BITCOIND_URL") {
+            let cred = |k: &str| {
+                nonempty(k).ok_or_else(|| {
+                    anyhow!("OC_BITCOIND_URL is set but {k} is not · fedimintd needs both RPC credentials")
+                })
+            };
             BitcoinBackend::Bitcoind {
                 url,
-                username: nonempty("OC_BITCOIND_USERNAME"),
-                password: nonempty("OC_BITCOIND_PASSWORD"),
+                username: cred("OC_BITCOIND_USERNAME")?,
+                password: cred("OC_BITCOIND_PASSWORD")?,
             }
         } else if let Some(url) = nonempty("OC_ESPLORA_URL") {
             BitcoinBackend::Esplora { url }
@@ -179,12 +185,8 @@ impl FedimintdRuntime {
                 password,
             } => {
                 env.insert("FM_BITCOIND_URL".into(), url.clone());
-                if let Some(u) = username {
-                    env.insert("FM_BITCOIND_USERNAME".into(), u.clone());
-                }
-                if let Some(p) = password {
-                    env.insert("FM_BITCOIND_PASSWORD".into(), p.clone());
-                }
+                env.insert("FM_BITCOIND_USERNAME".into(), username.clone());
+                env.insert("FM_BITCOIND_PASSWORD".into(), password.clone());
             }
         }
         env
@@ -281,6 +283,21 @@ mod tests {
         assert_eq!(env.get("FM_BITCOIN_NETWORK").unwrap(), "signet");
         // bitcoind takes precedence; no esplora var emitted.
         assert!(!env.contains_key("FM_ESPLORA_URL"));
+    }
+
+    #[test]
+    fn bitcoind_without_both_credentials_is_refused_before_boot() {
+        for missing in ["OC_BITCOIND_USERNAME", "OC_BITCOIND_PASSWORD"] {
+            let mut m = base();
+            m.insert("OC_BITCOIND_URL".into(), "http://127.0.0.1:8332".into());
+            m.insert("OC_BITCOIND_USERNAME".into(), "rpcuser".into());
+            m.insert("OC_BITCOIND_PASSWORD".into(), "rpcpass".into());
+            m.remove(missing);
+            let err = FedimintdRuntime::from_vars(|k| m.get(k).cloned())
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains(missing), "got: {err}");
+        }
     }
 
     #[test]
