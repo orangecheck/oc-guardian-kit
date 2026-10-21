@@ -66,6 +66,19 @@ pub struct FedimintdRuntime {
     /// Where to POST the operator-signed runtime attestation. None
     /// disables attestation (e.g. local dev).
     pub attestation_post_url: Option<String>,
+    /// `OC_ATTEST_KEY_HEX` · a hosted guardian's delegated attestation key.
+    /// When set, attestations are signed with it instead of the keychain.
+    pub attest_key: Option<AttestKey>,
+}
+
+/// A private key that never prints: `Debug` shows only that one is set.
+#[derive(Clone, PartialEq, Eq)]
+pub struct AttestKey(pub String);
+
+impl std::fmt::Debug for AttestKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("AttestKey(<redacted>)")
+    }
 }
 
 impl FedimintdRuntime {
@@ -147,6 +160,7 @@ impl FedimintdRuntime {
             federation_slug: require("OC_FEDERATION_SLUG")?,
             hosted_request_id: get("OC_HOSTED_REQUEST_ID").filter(|v| !v.is_empty()),
             attestation_post_url: get("OC_ATTESTATION_POST_URL").filter(|v| !v.is_empty()),
+            attest_key: nonempty("OC_ATTEST_KEY_HEX").map(AttestKey),
         })
     }
 
@@ -283,6 +297,14 @@ mod tests {
         assert_eq!(env.get("FM_BITCOIN_NETWORK").unwrap(), "signet");
         // bitcoind takes precedence; no esplora var emitted.
         assert!(!env.contains_key("FM_ESPLORA_URL"));
+    }
+
+    #[test]
+    fn attest_key_is_read_only_when_set() {
+        assert!(rt(&base()).attest_key.is_none());
+        let mut m = base();
+        m.insert("OC_ATTEST_KEY_HEX".into(), "07".repeat(32));
+        assert_eq!(rt(&m).attest_key, Some(AttestKey("07".repeat(32))));
     }
 
     #[test]

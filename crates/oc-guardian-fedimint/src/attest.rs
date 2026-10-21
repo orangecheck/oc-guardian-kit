@@ -6,15 +6,17 @@
 //! liveness) signed by the OPERATOR's Ed25519 key and POSTed to
 //! `OC_ATTESTATION_POST_URL`.
 //!
-//! Crucially: OC cannot forge it. The signing key lives in the machine's
-//! keychain under operator control; OC's Fly account runs the box but
-//! holds no signing-capable key. If the operator key isn't present yet,
-//! the guardian still runs — it just can't attest until the operator
-//! provisions their key (honest: an un-attested box is visibly so).
+//! On the operator's own machine the signing key is the operator key in the
+//! keychain. A guardian on OC-hosted hardware never holds that key; it signs
+//! with an attestation key passed in as `OC_ATTEST_KEY_HEX`, which counts for
+//! the seat only while the seat's operator has signed a delegation to it. OC
+//! runs that machine, so its liveness is only as independent as OC; the
+//! delegation makes the operator's consent explicit and revocable. Without
+//! either key the guardian still runs and is visibly un-attested.
 
 use anyhow::{Context, Result};
 use oc_guardian_core::identity::Signer;
-use oc_guardian_core::keychain;
+use oc_guardian_core::keychain::{self, StaticSigner};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
@@ -96,22 +98,28 @@ pub fn emit(
         info!("no OC_ATTESTATION_POST_URL · skipping attestation");
         return Ok(());
     };
-    let signer = match keychain::load(&rt.operator_id)? {
-        Some(s) => s,
-        None => {
-            warn!(
-                operator_id = %rt.operator_id,
-                "operator key not in keychain · guardian runs but cannot attest until the \
-                 operator provisions their key (OC cannot sign on their behalf)"
-            );
-            return Ok(());
-        }
+    let Some(signer) = attestation_signer(rt)? else {
+        warn!(
+            operator_id = %rt.operator_id,
+            "no attestation key · guardian runs but cannot attest until the operator \
+             provisions their key or delegates one (OC cannot sign on their behalf)"
+        );
+        return Ok(());
     };
     let att = build(rt, fedimintd_version, status, now_unix);
-    let signed = sign(&att, &signer)?;
+    let signed = sign(&att, signer.as_ref())?;
     post(url, &signed)?;
     info!(url, status, "posted operator-signed runtime attestation");
     Ok(())
+}
+
+/// The delegated attestation key when one is configured, else the operator
+/// key from the keychain, else nothing.
+fn attestation_signer(rt: &FedimintdRuntime) -> Result<Option<Box<dyn Signer>>> {
+    if let Some(key) = &rt.attest_key {
+        return Ok(Some(Box::new(StaticSigner::from_hex(&key.0)?)));
+    }
+    Ok(keychain::load(&rt.operator_id)?.map(|s| Box::new(s) as Box<dyn Signer>))
 }
 
 fn post(url: &str, signed: &SignedAttestation) -> Result<()> {
@@ -231,5 +239,30 @@ mod tests {
             a.sig_hex.chars().take(2).collect::<String>(),
             format!("{:02x}", expected_len % 256)
         );
+    }
+    #[test]
+    fn a_delegated_key_signs_instead_of_the_keychain_and_verifies() {
+        let key_hex = "07".repeat(32);
+        let mut rt = runtime();
+        rt.attest_key = Some(crate::config::AttestKey(key_hex.clone()));
+        let signer = attestation_signer(&rt).unwrap().expect("the delegated key");
+        let att = build(&rt, "0.11.4", "running", 1_700_000_000);
+        let signed = sign(&att, signer.as_ref()).unwrap();
+
+        let expected = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]).verifying_key();
+        assert_eq!(signed.pubkey_hex, hex::encode(expected.to_bytes()));
+        let sig: [u8; 64] = hex::decode(&signed.sig_hex).unwrap().try_into().unwrap();
+        assert!(oc_guardian_core::keychain::verify(
+            &OperatorPubKey(expected.to_bytes()),
+            &serde_json::to_vec(&att).unwrap(),
+            &sig
+        ));
+    }
+
+    #[test]
+    fn the_delegated_key_never_prints() {
+        let mut rt = runtime();
+        rt.attest_key = Some(crate::config::AttestKey("07".repeat(32)));
+        assert!(!format!("{rt:?}").contains("0707"));
     }
 }

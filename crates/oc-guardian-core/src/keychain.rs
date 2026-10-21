@@ -129,6 +129,36 @@ impl Signer for KeychainSigner {
     }
 }
 
+/// A signer over a key the process is handed rather than one in the OS
+/// keychain: a hosted guardian's attestation key, delegated by the seat's
+/// operator and passed in as `OC_ATTEST_KEY_HEX`. It signs liveness reports
+/// only; the operator key never reaches a hosted machine.
+pub struct StaticSigner {
+    signing: SigningKey,
+}
+
+impl StaticSigner {
+    pub fn from_hex(private_hex: &str) -> Result<Self> {
+        let bytes = hex::decode(private_hex.trim()).context("attestation key is not hex")?;
+        let arr: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("attestation key is not 32 bytes"))?;
+        Ok(Self {
+            signing: SigningKey::from_bytes(&arr),
+        })
+    }
+}
+
+impl Signer for StaticSigner {
+    fn pubkey(&self) -> OperatorPubKey {
+        OperatorPubKey(self.signing.verifying_key().to_bytes())
+    }
+
+    fn sign(&self, message: &[u8]) -> Result<[u8; 64]> {
+        Ok(self.signing.sign(message).to_bytes())
+    }
+}
+
 /// Verify an Ed25519 signature against a public key. Convenience
 /// wrapper around `ed25519_dalek::VerifyingKey::verify_strict` so
 /// callers don't have to care about the underlying crypto crate.
