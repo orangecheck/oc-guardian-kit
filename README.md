@@ -14,7 +14,7 @@ Verified-release install (recommended). Archives exist for
 ```sh
 T=x86_64-unknown-linux-gnu
 # 1. Pull the signed release.
-gh release download v0.2.2 -R orangecheck/oc-guardian-kit -p "oc-guardian-$T.*"
+gh release download v0.2.3 -R orangecheck/oc-guardian-kit -p "oc-guardian-$T.*"
 
 # 2. Verify the cosign keyless signature.
 cosign verify-blob \
@@ -35,7 +35,7 @@ oc-guardian --version
 Build-from-source install (for the trust-no-binaries among us):
 
 ```sh
-git clone --depth 1 --branch v0.2.2 https://github.com/orangecheck/oc-guardian-kit
+git clone --depth 1 --branch v0.2.3 https://github.com/orangecheck/oc-guardian-kit
 cd oc-guardian-kit
 cargo build --release --locked -p oc-guardian-cli  # dependency versions pinned by Cargo.lock
 sudo install target/release/oc-guardian /usr/local/bin/

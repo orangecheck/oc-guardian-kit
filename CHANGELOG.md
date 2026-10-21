@@ -6,6 +6,26 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
+## 0.2.3
+
+### Changed
+
+- **fedimintd 0.11.1 → 0.11.4.** The image bundles the 0.11.4 `.deb` and
+  `oc-guardian fedimintd install --version 0.11.4` fetches the 0.11.4 binary, each
+  pinned by SHA-256. 0.11.4 is the current 0.11 release and carries
+  upstream's 0.11.2–0.11.4 fixes; it is a drop-in upgrade with no consensus
+  or database change, and guardians can move one at a time. 0.11.1 is no
+  longer in the install manifest.
+- `rustls-webpki` 0.103.15 → 0.103.16 and `webpki-roots` 1.0.7 → 1.0.10,
+  which the audit gates now require.
+
+### Fixed
+
+- **A bitcoind backend needs both RPC credentials.** fedimintd exits at boot
+  when `FM_BITCOIND_URL` is set without a username and a password. The kit
+  passed both as optional, so a guardian configured that way started and
+  then crashed; it now names the missing variable before anything runs.
+
 ## 0.2.2
 
 ### Changed
