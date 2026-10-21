@@ -14,6 +14,14 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+      - name: no absolute home-directory paths
+        # A path into someone's home directory names a person in a public
+        # repo and works on one machine only.
+        run: |
+          if git grep -nIE '(^|[^A-Za-z0-9_.:/-])/(Users|home)/[A-Za-z0-9_.-]+/' -- . ':!*.lock'; then
+            echo "::error::absolute home-directory path in a tracked file"
+            exit 1
+          fi
       - name: install system deps
         # libdbus-1-dev: required by the keyring crate's
         # sync-secret-service feature (Linux keyring backend
