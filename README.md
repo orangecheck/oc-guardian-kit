@@ -87,6 +87,14 @@ Every lifecycle stage of the program (recruitment → exit) has a kit command. T
 | Payouts | `oc-guardian payouts {list, claim}` |
 | Exit | `oc-guardian exit-handoff <replacement-pubkey>` |
 
+## Hosted guardians
+
+A guardian on orangecheck-hosted hardware never holds your operator key. It signs its liveness attestations with a key of its own, which orangecheck generates and hands to the machine as a write-only Fly secret. Those attestations count for your seat only after you sign a delegation to that key on `ochk.app`, and only until it expires or you revoke it. A new machine gets a new key, and the delegation to the old one stops counting.
+
+That key signs liveness and nothing else: not the charter, a payout claim, an exit, a ratification or a vote. Those still take your operator key.
+
+**A hosted guardian's liveness is only as independent as orangecheck**, which runs the machine and made its key. Where that matters, run the guardian on hardware you control.
+
 ## Optional portal bridge
 
 Operators who want the portal at `ochk.app/me/operator` to drive their guardian (push UI for ceremony, dashboards, signing requests) opt in via:
