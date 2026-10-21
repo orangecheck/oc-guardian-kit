@@ -6,6 +6,27 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
+## 0.2.4
+
+### Added
+
+- **`oc-guardian exit-ratify`.** A guardian countersigns another guardian's
+  exit with `--exit-id`, naming a recent block (`--block-height`,
+  `--block-hash`). The portal ratifies an exit once the guardians staying
+  reach the charter threshold, at `/api/operator/exits/<id>/ratify`.
+- **A hosted guardian can attest.** With `OC_ATTEST_KEY_HEX` set, the
+  guardian signs its liveness attestations with that key instead of the
+  operator key, which a hosted machine never holds. The portal counts them
+  for the seat only while the seat's operator has signed a delegation to
+  that key. The key never prints.
+
+### Fixed
+
+- **`payouts claim` was refused every time.** It sent no `signed_at`, which
+  the portal requires. It now does, takes `--amount`, and pays a Lightning
+  address (`--to you@wallet.example`); an on-chain address could never be
+  paid by the rail that pays it.
+
 ## 0.2.3
 
 ### Changed
