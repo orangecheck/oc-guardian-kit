@@ -12,9 +12,9 @@
 # fedimintd is installed from the upstream .deb, SHA-256-verified at build
 # time. The release workflow MUST pass the verified .deb hash:
 #   docker build \
-#     --build-arg FEDIMINTD_VERSION=0.11.1 \
-#     --build-arg FEDIMINTD_SHA256=4f125dea124e3487a82b6cc75edc94fc8a41f65a578c8892cff4229cbdab9810 .
-# (that hash is fedimintd_0.11.1_amd64.deb, verified upstream.) Without
+#     --build-arg FEDIMINTD_VERSION=0.11.4 \
+#     --build-arg FEDIMINTD_SHA256=a158865fcd523c1dfb7b9820d17953d1713c9aeb8c84e54205d6f5aaf9d917d4 .
+# (that hash is fedimintd_0.11.4_amd64.deb, verified upstream.) Without
 # FEDIMINTD_SHA256 the build fails — we never ship an unverified consensus
 # binary.
 
@@ -40,7 +40,7 @@ LABEL org.opencontainers.image.title="oc-guardian" \
 # resolves its runtime deps + puts fedimintd on PATH). The .deb is
 # SHA-256-verified before install — the build fails without the verified
 # hash, so we never bundle an unverified consensus binary.
-ARG FEDIMINTD_VERSION=0.11.1
+ARG FEDIMINTD_VERSION=0.11.4
 ARG FEDIMINTD_DEB_URL=https://github.com/fedimint/fedimint/releases/download/v${FEDIMINTD_VERSION}/fedimintd_${FEDIMINTD_VERSION}_amd64.deb
 ARG FEDIMINTD_SHA256=""
 # Runtime shared libs the oc-guardian binary links: libdbus-1-3 (the `keyring`
