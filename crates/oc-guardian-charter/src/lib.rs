@@ -17,7 +17,7 @@
 //!
 //! ```text
 //! oc-guardian charter fetch <slug>          # see what would be signed
-//! oc-guardian charter sign --slug <slug>    # produce charter-sig.json
+//! oc-guardian charter sign <slug>           # produce charter-sig.json
 //! oc-guardian charter publish --file <path> # POST to portal
 //! ```
 
@@ -28,7 +28,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{anyhow, Context, Result};
 use oc_guardian_core::actions::{ActionEnvelope, ActionPayload, ActionType};
 use oc_guardian_core::config::{read_id, resolve_dir};
-use oc_guardian_core::identity::Signer;
 use oc_guardian_core::keychain;
 use oc_guardian_core::portal_client::{CharterFetchResponse, PortalClient};
 use tracing::{info, warn};
@@ -68,7 +67,7 @@ pub fn fetch(slug: String) -> Result<()> {
     Ok(())
 }
 
-/// `oc-guardian charter sign --slug <slug> --out <path>` · fetch the
+/// `oc-guardian charter sign <slug> --out <path>` · fetch the
 /// canonical charter meta, produce a charter-sign `ActionEnvelope`
 /// signed with the operator's hardware-backed key, write the envelope
 /// JSON to disk. Idempotent · re-running produces a fresh envelope
@@ -111,14 +110,14 @@ pub fn sign(slug: String, out: String, hsm: String) -> Result<()> {
         ));
     }
 
-    // 3. Load the operator keychain signer. The private bytes never
-    //    leave the KeychainSigner; we get a `sign(&[u8])` API only.
-    let signer = keychain::load(&id.0)
-        .context("read operator key from keychain")?
+    // 3. Load the operator signer (OS keychain, or the key file `init
+    //    --key-file` recorded). We get a `sign(&[u8])` API only.
+    let signer = keychain::load_signer(&id.0)
+        .context("read operator key")?
         .ok_or_else(|| {
             anyhow!(
-                "no keychain entry for operator id `{}` · run `oc-guardian init` or rotate \
-                 to repair drift between config and keychain.",
+                "no key for operator id `{}` in the OS keychain or a key file · run \
+                 `oc-guardian init` or rotate to repair drift between config and key.",
                 id.0
             )
         })?;

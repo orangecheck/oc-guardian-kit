@@ -11,6 +11,10 @@
 //! actually reads, plus the data dir and the operator-identity context
 //! the attestation needs. It is a pure transform (no I/O), so the whole
 //! wiring is unit-tested without a running daemon.
+//!
+//! Binds and URLs the operator sets themselves (`FM_BIND_P2P`,
+//! `FM_BIND_API`, `FM_BIND_UI`, `FM_P2P_URL`, `FM_API_URL`) are passed to
+//! fedimintd as given. The kit only fills in what is unset.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -21,9 +25,13 @@ use anyhow::{anyhow, Result};
 /// oc-me-web/src/lib/hosting/fly.ts (9000 P2P, 9001 API).
 pub const DEFAULT_P2P_PORT: u16 = 9000;
 pub const DEFAULT_API_PORT: u16 = 9001;
-/// Guardian setup UI / DKG-coordination bind. Not exposed publicly by
-/// Fly; reached over the machine's private network during the ceremony.
+/// Guardian setup UI port. Bound to loopback unless the operator sets
+/// `FM_BIND_UI` (on Fly, the machine's private 6PN address reaches it over
+/// the org's private network with `fly proxy`).
 pub const DEFAULT_UI_PORT: u16 = 8175;
+
+/// The networks fedimintd accepts for `FM_BITCOIN_NETWORK`.
+pub const BITCOIN_NETWORKS: &[&str] = &["bitcoin", "testnet", "testnet4", "signet", "regtest"];
 
 /// fedimintd's Bitcoin data source. fedimintd MANDATES one (it refuses
 /// to start without `--bitcoind-url` or `--esplora-url`); the federation
@@ -54,7 +62,17 @@ pub struct FedimintdRuntime {
     pub p2p_port: u16,
     pub api_port: u16,
     pub ui_port: u16,
-    /// `FM_BITCOIN_NETWORK` — `bitcoin` (mainnet) for production.
+    /// `FM_BIND_P2P` / `FM_BIND_API` / `FM_BIND_UI`: the operator's own when
+    /// set, else all interfaces for P2P and the API (both must be public)
+    /// and loopback for the setup UI.
+    pub bind_p2p: String,
+    pub bind_api: String,
+    pub bind_ui: String,
+    /// `FM_P2P_URL` / `FM_API_URL` when the operator set them.
+    pub p2p_url_override: Option<String>,
+    pub api_url_override: Option<String>,
+    /// `FM_BITCOIN_NETWORK`, from `OC_BITCOIN_NETWORK`. Required: there is
+    /// no default network.
     pub bitcoin_network: String,
     /// The mandatory Bitcoin data source.
     pub bitcoin_backend: BitcoinBackend,
@@ -69,6 +87,20 @@ pub struct FedimintdRuntime {
     /// `OC_ATTEST_KEY_HEX` · a hosted guardian's delegated attestation key.
     /// When set, attestations are signed with it instead of the keychain.
     pub attest_key: Option<AttestKey>,
+    /// `OC_GUARDIAN_SETUP_PASSWORD`: until DKG is done, the kit keeps
+    /// fedimintd's API on loopback and answers the public API bind itself,
+    /// passing on only calls that carry this password (see `gate`).
+    pub setup_password: Option<SetupPassword>,
+}
+
+/// A guardian setup password: `Debug` shows only that one is set.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SetupPassword(pub String);
+
+impl std::fmt::Debug for SetupPassword {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SetupPassword(<redacted>)")
+    }
 }
 
 /// A private key that never prints: `Debug` shows only that one is set.
@@ -144,16 +176,44 @@ impl FedimintdRuntime {
             ));
         };
 
+        let bitcoin_network = nonempty("OC_BITCOIN_NETWORK").ok_or_else(|| {
+            anyhow!(
+                "set OC_BITCOIN_NETWORK to one of {} · there is no default network",
+                BITCOIN_NETWORKS.join(", ")
+            )
+        })?;
+        if !BITCOIN_NETWORKS.contains(&bitcoin_network.as_str()) {
+            return Err(anyhow!(
+                "OC_BITCOIN_NETWORK={bitcoin_network} is not a network fedimintd knows · use one of {}",
+                BITCOIN_NETWORKS.join(", ")
+            ));
+        }
+
+        let p2p_port = port("OC_P2P_PORT", DEFAULT_P2P_PORT)?;
+        let api_port = port("OC_API_PORT", DEFAULT_API_PORT)?;
+        let ui_port = port("OC_UI_PORT", DEFAULT_UI_PORT)?;
+        let bind = |k: &str, default: String| -> Result<String> {
+            match nonempty(k) {
+                Some(v) => {
+                    split_bind(&v).ok_or_else(|| anyhow!("{k}={v} is not host:port"))?;
+                    Ok(v)
+                }
+                None => Ok(default),
+            }
+        };
+
         Ok(Self {
             data_dir,
             public_host,
-            p2p_port: port("OC_P2P_PORT", DEFAULT_P2P_PORT)?,
-            api_port: port("OC_API_PORT", DEFAULT_API_PORT)?,
-            ui_port: port("OC_UI_PORT", DEFAULT_UI_PORT)?,
-            // Production default is mainnet; override via OC_BITCOIN_NETWORK
-            // (bitcoin | testnet | signet | regtest).
-            bitcoin_network: nonempty("OC_BITCOIN_NETWORK")
-                .unwrap_or_else(|| "bitcoin".to_string()),
+            p2p_port,
+            api_port,
+            ui_port,
+            bind_p2p: bind("FM_BIND_P2P", format!("0.0.0.0:{p2p_port}"))?,
+            bind_api: bind("FM_BIND_API", format!("0.0.0.0:{api_port}"))?,
+            bind_ui: bind("FM_BIND_UI", format!("127.0.0.1:{ui_port}"))?,
+            p2p_url_override: nonempty("FM_P2P_URL"),
+            api_url_override: nonempty("FM_API_URL"),
+            bitcoin_network,
             bitcoin_backend,
             operator_id: require("OC_OPERATOR_ID")?,
             operator_pubkey_hex: require("OC_OPERATOR_PUBKEY_HEX")?,
@@ -161,30 +221,47 @@ impl FedimintdRuntime {
             hosted_request_id: get("OC_HOSTED_REQUEST_ID").filter(|v| !v.is_empty()),
             attestation_post_url: get("OC_ATTESTATION_POST_URL").filter(|v| !v.is_empty()),
             attest_key: nonempty("OC_ATTEST_KEY_HEX").map(AttestKey),
+            setup_password: nonempty("OC_GUARDIAN_SETUP_PASSWORD").map(SetupPassword),
         })
     }
 
     /// The public P2P URL peers dial during/after DKG.
     pub fn p2p_url(&self) -> String {
-        format!("fedimint://{}:{}", self.public_host, self.p2p_port)
+        self.p2p_url_override
+            .clone()
+            .unwrap_or_else(|| format!("fedimint://{}:{}", self.public_host, self.p2p_port))
     }
 
-    /// The public WebSocket consensus-API URL clients use. Fly terminates
-    /// TLS on the exposed port, so this is `wss`.
+    /// The consensus-API URL clients use: `FM_API_URL` when set, else `ws`
+    /// for a loopback host and `wss` for any other (Fly terminates TLS on
+    /// the exposed port).
     pub fn api_url(&self) -> String {
-        format!("wss://{}:{}", self.public_host, self.api_port)
+        if let Some(url) = &self.api_url_override {
+            return url.clone();
+        }
+        let scheme = if is_loopback_host(&self.public_host) {
+            "ws"
+        } else {
+            "wss"
+        };
+        format!("{scheme}://{}:{}", self.public_host, self.api_port)
+    }
+
+    /// True once DKG has written this guardian's consensus config. Until
+    /// then fedimintd's setup API answers on the API bind, and whoever
+    /// calls `set_local_params` first sets the guardian's password.
+    pub fn is_set_up(&self) -> bool {
+        self.data_dir.join("consensus.json").exists()
     }
 
     /// The `FM_*` environment `fedimintd` reads, as an ordered map
-    /// (BTreeMap → deterministic for tests + logs). Binds listen on all
-    /// interfaces inside the machine; the public URLs carry the routable
-    /// host Fly assigns.
+    /// (BTreeMap → deterministic for tests + logs).
     pub fn fedimintd_env(&self) -> BTreeMap<String, String> {
         let mut env = BTreeMap::new();
         env.insert("FM_DATA_DIR".into(), self.data_dir.display().to_string());
-        env.insert("FM_BIND_P2P".into(), format!("0.0.0.0:{}", self.p2p_port));
-        env.insert("FM_BIND_API".into(), format!("0.0.0.0:{}", self.api_port));
-        env.insert("FM_BIND_UI".into(), format!("0.0.0.0:{}", self.ui_port));
+        env.insert("FM_BIND_P2P".into(), self.bind_p2p.clone());
+        env.insert("FM_BIND_API".into(), self.bind_api.clone());
+        env.insert("FM_BIND_UI".into(), self.bind_ui.clone());
         env.insert("FM_P2P_URL".into(), self.p2p_url());
         env.insert("FM_API_URL".into(), self.api_url());
         env.insert("FM_BITCOIN_NETWORK".into(), self.bitcoin_network.clone());
@@ -206,11 +283,35 @@ impl FedimintdRuntime {
         env
     }
 
-    /// Local consensus-API base for health checks (the daemon binds all
-    /// interfaces; we probe loopback).
+    /// Where this machine reaches its own API: loopback when the API binds
+    /// all interfaces or loopback, else the bound address itself.
     pub fn local_api_base(&self) -> String {
-        format!("http://127.0.0.1:{}", self.api_port)
+        let (host, port) = split_bind(&self.bind_api).unwrap_or(("0.0.0.0", self.api_port));
+        let host = match host {
+            "0.0.0.0" | "::" | "[::]" => "127.0.0.1",
+            h => h,
+        };
+        format!("http://{host}:{port}")
     }
+}
+
+/// `host:port` or `[v6]:port` → (host, port). The host keeps its brackets.
+pub fn split_bind(bind: &str) -> Option<(&str, u16)> {
+    let (host, port) = bind.rsplit_once(':')?;
+    if host.is_empty() || (host.contains(':') && !host.starts_with('[')) {
+        return None;
+    }
+    Some((host, port.parse().ok()?))
+}
+
+/// Whether a bind's host only accepts connections from this machine.
+pub fn is_loopback_bind(bind: &str) -> bool {
+    split_bind(bind).is_some_and(|(host, _)| is_loopback_host(host))
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    let h = host.trim_start_matches('[').trim_end_matches(']');
+    h == "localhost" || h == "::1" || h.starts_with("127.")
 }
 
 #[cfg(test)]
@@ -228,6 +329,7 @@ mod tests {
                 "OC_ESPLORA_URL".to_string(),
                 "https://mempool.space/api".to_string(),
             ),
+            ("OC_BITCOIN_NETWORK".to_string(), "bitcoin".to_string()),
         ])
     }
 
@@ -258,8 +360,106 @@ mod tests {
         let env = r.fedimintd_env();
         assert_eq!(env.get("FM_BIND_P2P").unwrap(), "0.0.0.0:9000");
         assert_eq!(env.get("FM_BIND_API").unwrap(), "0.0.0.0:9001");
-        assert_eq!(env.get("FM_BIND_UI").unwrap(), "0.0.0.0:8175");
         assert_eq!(env.get("FM_DATA_DIR").unwrap(), "/data/fedimintd");
+    }
+
+    #[test]
+    fn setup_ui_binds_loopback_unless_the_operator_says_otherwise() {
+        let env = rt(&base()).fedimintd_env();
+        assert_eq!(env.get("FM_BIND_UI").unwrap(), "127.0.0.1:8175");
+        assert!(is_loopback_bind(env.get("FM_BIND_UI").unwrap()));
+
+        let mut m = base();
+        m.insert("FM_BIND_UI".into(), "[fdaa:0:1::3]:8175".into());
+        assert_eq!(
+            rt(&m).fedimintd_env().get("FM_BIND_UI").unwrap(),
+            "[fdaa:0:1::3]:8175"
+        );
+    }
+
+    #[test]
+    fn operator_binds_and_urls_are_passed_through_unchanged() {
+        let mut m = base();
+        m.insert("FM_BIND_P2P".into(), "10.0.0.5:7000".into());
+        m.insert("FM_BIND_API".into(), "127.0.0.1:7001".into());
+        m.insert("FM_P2P_URL".into(), "fedimint://g.example.org:443".into());
+        m.insert("FM_API_URL".into(), "wss://g.example.org/ws/".into());
+        let r = rt(&m);
+        let env = r.fedimintd_env();
+        assert_eq!(env.get("FM_BIND_P2P").unwrap(), "10.0.0.5:7000");
+        assert_eq!(env.get("FM_BIND_API").unwrap(), "127.0.0.1:7001");
+        assert_eq!(
+            env.get("FM_P2P_URL").unwrap(),
+            "fedimint://g.example.org:443"
+        );
+        assert_eq!(env.get("FM_API_URL").unwrap(), "wss://g.example.org/ws/");
+        assert_eq!(r.local_api_base(), "http://127.0.0.1:7001");
+    }
+
+    #[test]
+    fn a_bind_that_is_not_host_port_is_refused() {
+        let mut m = base();
+        m.insert("FM_BIND_API".into(), "9001".into());
+        let err = FedimintdRuntime::from_vars(|k| m.get(k).cloned())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("FM_BIND_API"), "got: {err}");
+    }
+
+    #[test]
+    fn api_url_is_ws_for_a_loopback_host_and_wss_otherwise() {
+        let mut m = base();
+        m.insert("OC_PUBLIC_HOST".into(), "127.0.0.1".into());
+        assert_eq!(rt(&m).api_url(), "ws://127.0.0.1:9001");
+        m.insert("OC_PUBLIC_HOST".into(), "localhost".into());
+        assert_eq!(rt(&m).api_url(), "ws://localhost:9001");
+        assert_eq!(rt(&base()).api_url(), "wss://oc-guardian-xyz.fly.dev:9001");
+    }
+
+    #[test]
+    fn the_network_must_be_named_and_known() {
+        let mut m = base();
+        m.remove("OC_BITCOIN_NETWORK");
+        let err = FedimintdRuntime::from_vars(|k| m.get(k).cloned())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no default network"), "got: {err}");
+        m.insert("OC_BITCOIN_NETWORK".into(), "mainnet".into());
+        let err = FedimintdRuntime::from_vars(|k| m.get(k).cloned())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("mainnet") && err.contains("bitcoin"),
+            "got: {err}"
+        );
+        for n in BITCOIN_NETWORKS {
+            m.insert("OC_BITCOIN_NETWORK".into(), (*n).into());
+            assert_eq!(rt(&m).bitcoin_network, *n);
+        }
+    }
+
+    #[test]
+    fn the_setup_password_is_read_and_never_printed() {
+        assert!(rt(&base()).setup_password.is_none());
+        let mut m = base();
+        m.insert("OC_GUARDIAN_SETUP_PASSWORD".into(), "s3cret-pw".into());
+        let r = rt(&m);
+        assert_eq!(r.setup_password, Some(SetupPassword("s3cret-pw".into())));
+        assert!(!format!("{r:?}").contains("s3cret-pw"));
+    }
+
+    #[test]
+    fn set_up_means_dkg_wrote_the_consensus_config() {
+        let dir = std::env::temp_dir().join(format!("oc-kit-setup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut m = base();
+        m.insert("FM_DATA_DIR".into(), dir.display().to_string());
+        let r = rt(&m);
+        assert!(!r.is_set_up());
+        std::fs::write(dir.join("consensus.json"), "{}").unwrap();
+        assert!(r.is_set_up());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -273,7 +473,7 @@ mod tests {
     }
 
     #[test]
-    fn esplora_backend_maps_to_fm_env_and_mainnet_default() {
+    fn esplora_backend_maps_to_fm_env() {
         let env = rt(&base()).fedimintd_env();
         assert_eq!(
             env.get("FM_ESPLORA_URL").unwrap(),

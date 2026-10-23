@@ -1,45 +1,113 @@
-//! DKG ceremony orchestration.
+//! DKG ceremony, driven through fedimintd 0.11's setup API on this machine.
 //!
-//! Grounded in how fedimintd 0.11.1 ACTUALLY runs DKG: it is driven
-//! through the guardian setup Web UI (`--bind-ui` / FM_BIND_UI). There is
-//! no stable programmatic `fedimintd dkg` CLI — guardians coordinate the
-//! distributed key generation through the setup UI, after which fedimintd
-//! transitions from "setup" to a running federation exposing the
-//! consensus API. So the kit's job here is to orchestrate AROUND that real
-//! flow, not to fake a DKG it can't drive headlessly:
+//! fedimintd 0.11 sets a federation up in four steps, the same ones its
+//! setup UI and the portal take:
 //!
-//!   start    · persist the ceremony intent (peers + setup code) and print
-//!              how to reach the setup UI to complete DKG.
-//!   status   · detect the phase — consensus API answering ⇒ DKG complete
-//!              + federation running; otherwise still in setup.
-//!   finalize · once the API answers, record completion + point at the
-//!              invite (the setup UI surfaces it post-DKG).
+//!   start    · `set_local_params`: this guardian's name and password (the
+//!              leader also names the federation and its size). Returns
+//!              this guardian's setup code, to send to the other guardians.
+//!   add-peer · `add_peer_setup_code`, once for every other guardian's code.
+//!   dkg      · `start_dkg`, on every guardian once all codes are in.
+//!   finalize · once `setup_status` reports consensus running, fetch the
+//!              invite code.
 //!
-//! The phase detection (API up ⇒ running) is real + reused from `status`.
-//! The setup UI binds to a machine-private port (not exposed by Fly), so
-//! operators reach it via `fly proxy`.
+//! The kit calls the API over this machine's own address for it, so the
+//! password never crosses the network. Until `start` has run, whoever
+//! reaches the setup API first sets the password: run it as soon as the
+//! guardian boots.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use tracing::info;
 
 use crate::config::FedimintdRuntime;
-use crate::status as daemon_status;
+use crate::status::{self, Phase};
 
-/// Persisted ceremony intent · lives at `<data_dir>/oc-ceremony.json`.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+/// Persisted ceremony progress · lives at `<data_dir>/oc-ceremony.json`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CeremonyState {
     pub federation_slug: String,
-    /// Peer guardian URLs supplied to `ceremony start`.
-    pub peers: Vec<String>,
-    /// The federation organizer's setup code.
+    /// This guardian's name, as set with `start`.
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub leader: bool,
+    /// This guardian's own setup code, returned by `set_local_params`.
+    #[serde(default)]
     pub setup_code: String,
+    /// The names fedimintd returned for each peer code added.
+    #[serde(default)]
+    pub peers: Vec<String>,
     pub started_at_unix: u64,
-    /// Set by `finalize` once the consensus API is answering.
+    #[serde(default)]
+    pub dkg_started_at_unix: Option<u64>,
+    /// Set by `finalize` once consensus is running.
     pub finalized_at_unix: Option<u64>,
+    #[serde(default)]
+    pub invite_code: Option<String>,
+}
+
+/// What `start` sends as `set_local_params`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocalParams {
+    pub name: String,
+    /// The leader's federation name and size; `None` on every other guardian.
+    pub federation: Option<(String, u32)>,
+}
+
+impl LocalParams {
+    pub fn new(
+        name: String,
+        leader: bool,
+        federation_name: Option<String>,
+        federation_size: Option<u32>,
+    ) -> Result<Self> {
+        if name.trim().is_empty() {
+            bail!("--name is required");
+        }
+        let federation = match (leader, federation_name, federation_size) {
+            (true, Some(n), Some(s)) if !n.trim().is_empty() && s >= 1 => Some((n, s)),
+            (true, _, _) => {
+                bail!("the leader also sets --federation-name and --federation-size")
+            }
+            (false, None, None) => None,
+            (false, _, _) => {
+                bail!("--federation-name and --federation-size are for the leader (--leader)")
+            }
+        };
+        Ok(Self { name, federation })
+    }
+
+    fn to_json(&self) -> Value {
+        let mut v = json!({ "name": self.name });
+        if let Some((n, s)) = &self.federation {
+            v["federation_name"] = json!(n);
+            v["federation_size"] = json!(s);
+        }
+        v
+    }
+}
+
+/// The guardian password: `--password-file`, else `FM_PASSWORD` (the
+/// variable fedimint-cli reads). Never printed.
+pub fn read_password(password_file: Option<&str>) -> Result<String> {
+    let pw = match password_file {
+        Some(path) => std::fs::read_to_string(path)
+            .with_context(|| format!("reading the password file {path}"))?
+            .trim_end_matches(['\r', '\n'])
+            .to_string(),
+        None => std::env::var("FM_PASSWORD").map_err(|_| {
+            anyhow!("give the guardian password with --password-file or FM_PASSWORD")
+        })?,
+    };
+    if pw.is_empty() {
+        bail!("the guardian password is empty");
+    }
+    Ok(pw)
 }
 
 fn now_unix() -> u64 {
@@ -49,30 +117,12 @@ fn now_unix() -> u64 {
         .unwrap_or(0)
 }
 
-fn state_path(rt: &FedimintdRuntime) -> PathBuf {
-    rt.data_dir.join("oc-ceremony.json")
+fn state_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("oc-ceremony.json")
 }
 
-/// Parse the comma-separated `--peers` value into a clean list.
-pub fn parse_peers(peers: &str) -> Vec<String> {
-    peers
-        .split(',')
-        .map(|p| p.trim().to_string())
-        .filter(|p| !p.is_empty())
-        .collect()
-}
-
-/// `fly proxy` guidance for reaching the machine-private setup UI.
-pub fn setup_ui_hint(rt: &FedimintdRuntime) -> String {
-    format!(
-        "the setup UI binds 0.0.0.0:{ui} inside the machine (not exposed by Fly). \
-         Reach it with:  fly proxy {ui}:{ui} -a <app>   then open http://localhost:{ui}",
-        ui = rt.ui_port
-    )
-}
-
-fn read_state(rt: &FedimintdRuntime) -> Result<Option<CeremonyState>> {
-    let path = state_path(rt);
+fn read_state(data_dir: &Path) -> Result<Option<CeremonyState>> {
+    let path = state_path(data_dir);
     match std::fs::read_to_string(&path) {
         Ok(s) => Ok(Some(
             serde_json::from_str(&s).with_context(|| format!("parsing {}", path.display()))?,
@@ -82,10 +132,10 @@ fn read_state(rt: &FedimintdRuntime) -> Result<Option<CeremonyState>> {
     }
 }
 
-fn write_state(rt: &FedimintdRuntime, state: &CeremonyState) -> Result<()> {
-    std::fs::create_dir_all(&rt.data_dir)
-        .with_context(|| format!("creating {}", rt.data_dir.display()))?;
-    let path = state_path(rt);
+fn write_state(data_dir: &Path, state: &CeremonyState) -> Result<()> {
+    std::fs::create_dir_all(data_dir)
+        .with_context(|| format!("creating {}", data_dir.display()))?;
+    let path = state_path(data_dir);
     std::fs::write(
         &path,
         serde_json::to_vec_pretty(state).context("encoding ceremony state")?,
@@ -93,48 +143,159 @@ fn write_state(rt: &FedimintdRuntime, state: &CeremonyState) -> Result<()> {
     .with_context(|| format!("writing {}", path.display()))
 }
 
-/// `ceremony start` · record the intent + print how to complete DKG.
-pub fn start(peers: String, setup_code: String) -> Result<()> {
-    let rt = FedimintdRuntime::from_env().context("resolving runtime from env")?;
+/// `start` against an API base: set local params, record the setup code.
+pub fn start_at(
+    base: &str,
+    data_dir: &Path,
+    slug: &str,
+    params: &LocalParams,
+    password: &str,
+) -> Result<CeremonyState> {
+    let code = status::rpc(base, "set_local_params", params.to_json(), Some(password))
+        .map_err(|e| anyhow!("{e}"))?;
+    let setup_code = code
+        .as_str()
+        .ok_or_else(|| anyhow!("set_local_params did not return a setup code"))?
+        .to_string();
     let state = CeremonyState {
-        federation_slug: rt.federation_slug.clone(),
-        peers: parse_peers(&peers),
+        federation_slug: slug.to_string(),
+        name: params.name.clone(),
+        leader: params.federation.is_some(),
         setup_code,
         started_at_unix: now_unix(),
-        finalized_at_unix: None,
+        ..Default::default()
     };
-    write_state(&rt, &state)?;
-    info!(
-        federation = %rt.federation_slug,
-        peers = state.peers.len(),
-        "ceremony intent recorded"
+    write_state(data_dir, &state)?;
+    Ok(state)
+}
+
+/// `add-peer` against an API base: add each code, record the peer names.
+pub fn add_peers_at(
+    base: &str,
+    data_dir: &Path,
+    codes: &[String],
+    password: &str,
+) -> Result<Vec<String>> {
+    let mut state =
+        read_state(data_dir)?.ok_or_else(|| anyhow!("run `oc-guardian ceremony start` first"))?;
+    let mut names = Vec::new();
+    for code in codes {
+        let name = status::rpc(
+            base,
+            "add_peer_setup_code",
+            json!(code.trim()),
+            Some(password),
+        )
+        .map_err(|e| anyhow!("{e}"))?;
+        let name = name.as_str().unwrap_or("(unnamed)").to_string();
+        if !state.peers.contains(&name) {
+            state.peers.push(name.clone());
+        }
+        names.push(name);
+    }
+    write_state(data_dir, &state)?;
+    Ok(names)
+}
+
+/// `dkg` against an API base.
+pub fn start_dkg_at(base: &str, data_dir: &Path, password: &str) -> Result<()> {
+    status::rpc(base, "start_dkg", Value::Null, Some(password)).map_err(|e| anyhow!("{e}"))?;
+    if let Some(mut state) = read_state(data_dir)? {
+        state.dkg_started_at_unix = Some(now_unix());
+        write_state(data_dir, &state)?;
+    }
+    Ok(())
+}
+
+/// `finalize` against an API base: only once consensus is running.
+pub fn finalize_at(base: &str, data_dir: &Path) -> Result<String> {
+    let phase = status::phase_at(base)?;
+    if phase != Phase::ConsensusRunning {
+        bail!("DKG is not complete · {}", phase.describe());
+    }
+    let invite = status::rpc(base, "invite_code", Value::Null, None)
+        .map_err(|e| anyhow!("{e}"))?
+        .as_str()
+        .ok_or_else(|| anyhow!("invite_code did not return a code"))?
+        .to_string();
+    if let Some(mut state) = read_state(data_dir)? {
+        state.finalized_at_unix = Some(now_unix());
+        state.invite_code = Some(invite.clone());
+        write_state(data_dir, &state)?;
+    }
+    Ok(invite)
+}
+
+fn runtime() -> Result<FedimintdRuntime> {
+    FedimintdRuntime::from_env().context("resolving runtime from env")
+}
+
+/// `ceremony start`
+pub fn start(params: LocalParams, password_file: Option<String>) -> Result<()> {
+    let rt = runtime()?;
+    let password = read_password(password_file.as_deref())?;
+    let state = start_at(
+        &rt.local_api_base(),
+        &rt.data_dir,
+        &rt.federation_slug,
+        &params,
+        &password,
+    )?;
+    info!(federation = %rt.federation_slug, leader = state.leader, "local params set");
+    println!();
+    println!(
+        "  local params set for {} · this guardian's password is now the one you gave",
+        state.name
     );
     println!();
-    println!("  ceremony started for federation {}", rt.federation_slug);
-    println!("    peers      {}", state.peers.len());
-    println!("    p2p url    {}", rt.p2p_url());
-    println!("    api url    {}", rt.api_url());
+    println!("  your setup code (send it to each other guardian):");
+    println!("    {}", state.setup_code);
     println!();
-    println!("  DKG runs through the fedimintd setup UI:");
-    println!("    {}", setup_ui_hint(&rt));
-    println!();
-    println!("  enter the setup code + peer URLs there to run DKG, then:");
-    println!("    oc-guardian ceremony status      # poll until the federation is running");
-    println!("    oc-guardian ceremony finalize    # record completion + get the invite");
+    println!("  then, with every other guardian's code:");
+    println!("    oc-guardian ceremony add-peer --code <code> [--code <code> …]");
+    println!("    oc-guardian ceremony dkg");
     println!();
     Ok(())
 }
 
-/// `ceremony status` · detect setup vs running from the consensus API.
+/// `ceremony add-peer`
+pub fn add_peer(codes: Vec<String>, password_file: Option<String>) -> Result<()> {
+    let rt = runtime()?;
+    let password = read_password(password_file.as_deref())?;
+    let names = add_peers_at(&rt.local_api_base(), &rt.data_dir, &codes, &password)?;
+    for n in names {
+        println!("  added peer {n}");
+    }
+    Ok(())
+}
+
+/// `ceremony dkg`
+pub fn dkg(password_file: Option<String>) -> Result<()> {
+    let rt = runtime()?;
+    let password = read_password(password_file.as_deref())?;
+    start_dkg_at(&rt.local_api_base(), &rt.data_dir, &password)?;
+    println!("  DKG started · run `oc-guardian ceremony status` until it says RUNNING");
+    Ok(())
+}
+
+/// `ceremony status` · the phase fedimintd reports, plus recorded progress.
 pub fn status() -> Result<()> {
-    let rt = FedimintdRuntime::from_env().context("resolving runtime from env")?;
-    let running = daemon_status::api_up(&rt);
-    let state = read_state(&rt)?;
+    let rt = runtime()?;
+    let phase = status::phase(&rt)?;
     println!();
-    match &state {
+    match read_state(&rt.data_dir)? {
         Some(s) => {
             println!("  ceremony · federation {}", s.federation_slug);
-            println!("    peers          {}", s.peers.len());
+            println!(
+                "    guardian       {}{}",
+                s.name,
+                if s.leader { " (leader)" } else { "" }
+            );
+            println!("    peers added    {}", s.peers.len());
+            println!(
+                "    dkg started    {}",
+                s.dkg_started_at_unix.map(|_| "yes").unwrap_or("no")
+            );
             println!(
                 "    finalized      {}",
                 s.finalized_at_unix.map(|_| "yes").unwrap_or("no")
@@ -142,42 +303,23 @@ pub fn status() -> Result<()> {
         }
         None => println!("  no recorded ceremony · run `oc-guardian ceremony start` first"),
     }
-    if running {
-        println!("    phase          RUNNING · consensus API is answering (DKG complete)");
-    } else {
-        println!("    phase          SETUP · DKG not complete — finish it in the setup UI");
-        println!("    {}", setup_ui_hint(&rt));
-    }
+    println!("    phase          {}", phase.describe());
     println!();
     Ok(())
 }
 
-/// `ceremony finalize` · once the API answers, record completion.
+/// `ceremony finalize` · once consensus is running, record it and print the invite.
 pub fn finalize() -> Result<()> {
-    let rt = FedimintdRuntime::from_env().context("resolving runtime from env")?;
-    if !daemon_status::api_up(&rt) {
-        anyhow::bail!(
-            "DKG is not complete · the consensus API at {} is not answering yet. \
-             Finish the ceremony in the setup UI ({}), then re-run finalize.",
-            rt.api_url(),
-            setup_ui_hint(&rt)
-        );
-    }
-    if let Some(mut state) = read_state(&rt)? {
-        state.finalized_at_unix = Some(now_unix());
-        write_state(&rt, &state)?;
-    }
+    let rt = runtime()?;
+    let invite = finalize_at(&rt.local_api_base(), &rt.data_dir)?;
     println!();
     println!(
-        "  ✓ DKG complete · federation {} is running",
+        "  DKG complete · federation {} is running",
         rt.federation_slug
     );
     println!("    api url   {}", rt.api_url());
     println!("    p2p url   {}", rt.p2p_url());
-    println!();
-    println!("  the federation invite code is shown in the setup UI on completion:");
-    println!("    {}", setup_ui_hint(&rt));
-    println!("  publish it via the portal so clients can join.");
+    println!("    invite    {invite}");
     println!();
     Ok(())
 }
@@ -185,54 +327,128 @@ pub fn finalize() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
+    use crate::status::stub::{error, result, serve};
 
-    fn rt() -> FedimintdRuntime {
-        let m = HashMap::from([
-            ("OC_OPERATOR_ID".to_string(), "op-test".to_string()),
-            ("OC_OPERATOR_PUBKEY_HEX".to_string(), "aa".to_string()),
-            ("OC_FEDERATION_SLUG".to_string(), "oc-me-v1".to_string()),
-            ("OC_PUBLIC_HOST".to_string(), "g.example.com".to_string()),
-            (
-                "OC_ESPLORA_URL".to_string(),
-                "https://mempool.space/api".to_string(),
-            ),
-        ]);
-        FedimintdRuntime::from_vars(|k| m.get(k).cloned()).unwrap()
+    fn temp_dir(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("oc-kit-ceremony-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        d
     }
 
     #[test]
-    fn parses_peer_list() {
+    fn local_params_follow_fedimint_0_11() {
+        let leader = LocalParams::new("g0".into(), true, Some("fed".into()), Some(4)).unwrap();
         assert_eq!(
-            parse_peers(" fedimint://a:9000 , fedimint://b:9000 ,, "),
-            vec!["fedimint://a:9000", "fedimint://b:9000"]
+            leader.to_json(),
+            json!({"name":"g0","federation_name":"fed","federation_size":4})
         );
-        assert!(parse_peers("").is_empty());
+        let peer = LocalParams::new("g1".into(), false, None, None).unwrap();
+        assert_eq!(peer.to_json(), json!({"name":"g1"}));
+        assert!(LocalParams::new("g0".into(), true, None, Some(4)).is_err());
+        assert!(LocalParams::new("g1".into(), false, Some("fed".into()), None).is_err());
+        assert!(LocalParams::new(" ".into(), false, None, None).is_err());
     }
 
     #[test]
-    fn setup_ui_hint_names_the_ui_port_and_fly_proxy() {
-        let h = setup_ui_hint(&rt());
-        assert!(h.contains("8175"));
-        assert!(h.contains("fly proxy"));
+    fn start_sets_local_params_with_the_password_and_records_the_code() {
+        let s = serve(Box::new(|_, m, _| match m {
+            "set_local_params" => result(json!("fedimint-code-g0")),
+            _ => error("unexpected"),
+        }));
+        let dir = temp_dir("start");
+        let p = LocalParams::new("g0".into(), true, Some("fed".into()), Some(4)).unwrap();
+        let st = start_at(&s.base, &dir, "fed", &p, "pw").unwrap();
+        assert_eq!(st.setup_code, "fedimint-code-g0");
+        assert!(st.leader);
+        assert_eq!(read_state(&dir).unwrap().unwrap(), st);
+        let calls = s.calls.lock().unwrap();
+        assert_eq!(calls[0].1["auth"], json!("pw"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn ceremony_state_roundtrips() {
-        let s = CeremonyState {
-            federation_slug: "oc-me-v1".into(),
-            peers: vec!["fedimint://a:9000".into()],
-            setup_code: "abc".into(),
-            started_at_unix: 1_700_000_000,
-            finalized_at_unix: None,
-        };
-        let json = serde_json::to_string(&s).unwrap();
-        let back: CeremonyState = serde_json::from_str(&json).unwrap();
-        assert_eq!(s, back);
+    fn start_fails_when_someone_else_already_set_local_params() {
+        let s = serve(Box::new(|_, _, _| {
+            error("Local parameters have already been set")
+        }));
+        let dir = temp_dir("taken");
+        let p = LocalParams::new("g0".into(), false, None, None).unwrap();
+        let err = start_at(&s.base, &dir, "fed", &p, "pw")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("already been set"), "got: {err}");
+        assert!(read_state(&dir).unwrap().is_none());
     }
 
     #[test]
-    fn state_path_is_under_data_dir() {
-        assert_eq!(state_path(&rt()), rt().data_dir.join("oc-ceremony.json"));
+    fn add_peer_adds_every_code_and_dkg_starts() {
+        let s = serve(Box::new(|_, m, j| match m {
+            "set_local_params" => result(json!("own")),
+            "add_peer_setup_code" => {
+                let code = j["params"][0]["params"].as_str().unwrap().to_string();
+                result(json!(format!("name-of-{code}")))
+            }
+            "start_dkg" => result(Value::Null),
+            _ => error("unexpected"),
+        }));
+        let dir = temp_dir("peers");
+        let p = LocalParams::new("g1".into(), false, None, None).unwrap();
+        start_at(&s.base, &dir, "fed", &p, "pw").unwrap();
+        let names = add_peers_at(&s.base, &dir, &["a".into(), " b ".into()], "pw").unwrap();
+        assert_eq!(names, vec!["name-of-a", "name-of-b"]);
+        start_dkg_at(&s.base, &dir, "pw").unwrap();
+        let st = read_state(&dir).unwrap().unwrap();
+        assert_eq!(st.peers, vec!["name-of-a", "name-of-b"]);
+        assert!(st.dkg_started_at_unix.is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn finalize_refuses_while_fedimintd_is_still_in_setup() {
+        // fedimintd during setup: any HTTP reply, but not consensus.
+        let s = serve(Box::new(|verb, m, _| match (verb, m) {
+            ("GET", _) => (405, String::new()),
+            (_, "setup_status") => result(json!("SharingConnectionCodes")),
+            _ => error("unexpected"),
+        }));
+        let err = finalize_at(&s.base, &temp_dir("final-setup"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not complete"), "got: {err}");
+    }
+
+    #[test]
+    fn finalize_records_the_invite_once_consensus_is_running() {
+        let s = serve(Box::new(|_, m, _| match m {
+            "setup_status" => result(json!("ConsensusIsRunning")),
+            "invite_code" => result(json!("fed11invite")),
+            _ => error("unexpected"),
+        }));
+        let dir = temp_dir("final");
+        write_state(
+            &dir,
+            &CeremonyState {
+                federation_slug: "fed".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(finalize_at(&s.base, &dir).unwrap(), "fed11invite");
+        let st = read_state(&dir).unwrap().unwrap();
+        assert_eq!(st.invite_code.as_deref(), Some("fed11invite"));
+        assert!(st.finalized_at_unix.is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_password_comes_from_a_file_without_its_newline() {
+        let dir = temp_dir("pw");
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("pw");
+        std::fs::write(&f, "s3cret\n").unwrap();
+        assert_eq!(read_password(Some(f.to_str().unwrap())).unwrap(), "s3cret");
+        std::fs::write(&f, "\n").unwrap();
+        assert!(read_password(Some(f.to_str().unwrap())).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

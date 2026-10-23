@@ -30,6 +30,10 @@ pub struct KitConfig {
     /// signing path the kit uses for subsequent commands. Defaults
     /// to `os-keychain`.
     pub hsm_backend: Option<String>,
+    /// Set by `init --key-file` on a machine without an OS keychain: the
+    /// operator key is read from this file instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_file: Option<String>,
     /// Optional portal bridge state. Disabled by default; operators
     /// opt in via `oc-guardian bridge enable`.
     pub bridge: BridgeConfig,
@@ -176,6 +180,7 @@ mod tests {
         ensure_dir(&dir).unwrap();
         let cfg = KitConfig {
             hsm_backend: Some("yubikey".into()),
+            key_file: Some("/srv/oc/operator.key".into()),
             bridge: BridgeConfig {
                 enabled: true,
                 allowed_actions: vec!["charter-sign".into(), "alert-publish".into()],
@@ -184,6 +189,7 @@ mod tests {
         write_kit_config(&dir, &cfg).unwrap();
         let parsed = read_kit_config(&dir).unwrap().expect("should be Some");
         assert_eq!(parsed.hsm_backend, Some("yubikey".to_string()));
+        assert_eq!(parsed.key_file.as_deref(), Some("/srv/oc/operator.key"));
         assert!(parsed.bridge.enabled);
         assert_eq!(parsed.bridge.allowed_actions.len(), 2);
         let _ = fs::remove_dir_all(&dir);

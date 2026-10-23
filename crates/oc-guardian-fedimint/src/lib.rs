@@ -19,6 +19,7 @@
 pub mod attest;
 pub mod ceremony;
 pub mod config;
+pub mod gate;
 pub mod install;
 pub mod run;
 pub mod settlement;
@@ -32,13 +33,16 @@ use anyhow::Result;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// CLI entrypoint · download + verify + install a pinned fedimintd
-/// release into the standard bin dir (`<FM_DATA_DIR>/../bin`, or
-/// `/usr/local/bin` when the runtime env isn't resolvable).
-pub fn install(version: String) -> Result<()> {
-    let bin_dir = config::FedimintdRuntime::from_env()
-        .ok()
-        .and_then(|rt| rt.data_dir.parent().map(|p| p.join("bin")))
-        .unwrap_or_else(|| PathBuf::from("/usr/local/bin"));
+/// release into `dir`, else the standard bin dir (`<FM_DATA_DIR>/../bin`,
+/// or `/usr/local/bin` when the runtime env isn't resolvable).
+pub fn install(version: String, dir: Option<String>) -> Result<()> {
+    let bin_dir = match dir {
+        Some(d) => PathBuf::from(d),
+        None => config::FedimintdRuntime::from_env()
+            .ok()
+            .and_then(|rt| rt.data_dir.parent().map(|p| p.join("bin")))
+            .unwrap_or_else(|| PathBuf::from("/usr/local/bin")),
+    };
     let path = install::install_to(&version, &bin_dir)?;
     println!("installed fedimintd {version} → {}", path.display());
     Ok(())
@@ -50,7 +54,8 @@ pub fn run(config: String) -> Result<()> {
     run::run(config)
 }
 
-/// CLI entrypoint · print the wrapped daemon's status.
-pub fn status() -> Result<()> {
-    status::report()
+/// CLI entrypoint · print the wrapped daemon's status. `config` is the
+/// same fedimintd-binary path `run` takes.
+pub fn status(config: String) -> Result<()> {
+    status::report(&config)
 }

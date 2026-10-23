@@ -6,8 +6,45 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
-## Unreleased
+## 0.2.6
 
+### Added
+
+- **The setup gate.** With `OC_GUARDIAN_SETUP_PASSWORD` set, a guardian that
+  has not finished DKG keeps fedimintd's API on loopback, and the kit answers
+  the public API bind: `setup_status` and `invite_code` pass to anyone, every
+  other call only with that password, and batches not at all. When DKG writes
+  the consensus config, the kit hands the bind back to fedimintd. fedimintd
+  forgets local params on restart, so the gate holds across restarts.
+- **The ceremony runs on fedimintd 0.11's setup API.** `ceremony start`
+  sets this guardian's name and password (the leader adds `--federation-name`
+  and `--federation-size`) and prints its setup code; `ceremony add-peer
+  --code …` and `ceremony dkg` follow. The password comes from
+  `--password-file` or `FM_PASSWORD`, over the local API only.
+- **`ceremony status`, `ceremony finalize` and `fedimintd status` report
+  fedimintd's own `setup_status`.** Finalize runs only once it reports
+  consensus running, and prints the invite code.
+- **`init --key-file <path>`** keeps the operator key in a file (mode 0600) on
+  a machine with no OS keychain, with a warning that the file is the key.
+- **`fedimintd install --dir`** and **`fedimintd status --config`.**
+- A start-up warning while a guardian that has not finished DKG has its setup
+  API or UI reachable from other machines and no setup gate.
+
+### Changed
+
+- **`OC_BITCOIN_NETWORK` is required** and must be `bitcoin`, `testnet`,
+  `testnet4`, `signet` or `regtest`. There is no default network.
+- **The setup UI binds 127.0.0.1** unless `FM_BIND_UI` says otherwise.
+- **`FM_BIND_P2P`, `FM_BIND_API`, `FM_BIND_UI`, `FM_P2P_URL` and `FM_API_URL`
+  set by the operator are passed to fedimintd unchanged.** The kit only fills
+  in what is unset.
+- **The API URL is `ws://` for a loopback host** and `wss://` otherwise.
+- **`ceremony start` no longer takes `--peers` or `--setup-code`.** In
+  fedimintd 0.11 each guardian makes its own setup code.
+- **README, BYPASS.md and SECURITY.md describe the kit as it is**: who runs
+  the test seats today, the OS keychain or key file in place of hardware
+  tokens, the portal bridge as a stub, `--config` as the fedimintd binary
+  path, and the commands' real flags.
 - `attest-delegate` and `exit-ratify` help says the block is a recent bitcoin
   mainnet block, within 6 of the tip, as the portal checks, even for a
   federation on signet or testnet. It said "from any explorer".

@@ -16,11 +16,14 @@
 //! installation; switching identities means deleting the existing
 //! keychain entry first.
 
+use std::path::{Path, PathBuf};
+
 use anyhow::{Context, Result};
 use ed25519_dalek::{Signer as _, SigningKey, VerifyingKey};
 use keyring::Entry;
 use rand::{rngs::OsRng, RngCore};
 
+use crate::config::{read_kit_config, resolve_dir};
 use crate::identity::{OperatorPubKey, Signer};
 
 const SERVICE: &str = "io.ochk.oc-guardian";
@@ -159,6 +162,91 @@ impl Signer for StaticSigner {
     }
 }
 
+/// The operator's signer: the key file `init --key-file` recorded, else
+/// the OS keychain entry. Ok(None) when neither holds a key.
+pub fn load_signer(operator_id: &str) -> Result<Option<Box<dyn Signer>>> {
+    let cfg = read_kit_config(&resolve_dir(None)?)?.unwrap_or_default();
+    if let Some(path) = cfg.key_file {
+        return Ok(Some(Box::new(FileSigner::load(Path::new(&path))?)));
+    }
+    Ok(load(operator_id)?.map(|s| Box::new(s) as Box<dyn Signer>))
+}
+
+/// A signer over an operator key kept in a file, for a machine with no OS
+/// keychain (a headless server). The file is the key: anyone who can read
+/// it can sign as the operator, so `init` only makes one when asked to.
+pub struct FileSigner {
+    path: PathBuf,
+    pubkey: OperatorPubKey,
+}
+
+impl FileSigner {
+    /// Generate a key into `path` (mode 0600). Refuses to overwrite.
+    pub fn generate(path: &Path) -> Result<Self> {
+        if path.exists() {
+            anyhow::bail!(
+                "{} already exists · refusing to overwrite an operator key",
+                path.display()
+            );
+        }
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating {}", parent.display()))?;
+        }
+        let mut secret = [0u8; 32];
+        OsRng.fill_bytes(&mut secret);
+        write_private(path, &hex::encode(secret))?;
+        Self::load(path)
+    }
+
+    pub fn load(path: &Path) -> Result<Self> {
+        let signing = read_key_file(path)?;
+        Ok(Self {
+            path: path.to_path_buf(),
+            pubkey: OperatorPubKey(signing.verifying_key().to_bytes()),
+        })
+    }
+}
+
+impl Signer for FileSigner {
+    fn pubkey(&self) -> OperatorPubKey {
+        self.pubkey
+    }
+
+    fn sign(&self, message: &[u8]) -> Result<[u8; 64]> {
+        Ok(read_key_file(&self.path)?.sign(message).to_bytes())
+    }
+}
+
+fn read_key_file(path: &Path) -> Result<SigningKey> {
+    let text = std::fs::read_to_string(path)
+        .with_context(|| format!("reading operator key file {}", path.display()))?;
+    let bytes = hex::decode(text.trim()).context("operator key file is not hex")?;
+    let arr: [u8; 32] = bytes
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("operator key file is not 32 bytes"))?;
+    Ok(SigningKey::from_bytes(&arr))
+}
+
+#[cfg(unix)]
+fn write_private(path: &Path, contents: &str) -> Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .with_context(|| format!("creating {}", path.display()))?;
+    f.write_all(contents.as_bytes())
+        .with_context(|| format!("writing {}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn write_private(path: &Path, contents: &str) -> Result<()> {
+    std::fs::write(path, contents).with_context(|| format!("writing {}", path.display()))
+}
+
 /// Verify an Ed25519 signature against a public key. Convenience
 /// wrapper around `ed25519_dalek::VerifyingKey::verify_strict` so
 /// callers don't have to care about the underlying crypto crate.
@@ -168,4 +256,28 @@ pub fn verify(pubkey: &OperatorPubKey, message: &[u8], sig: &[u8; 64]) -> bool {
     };
     let sig = ed25519_dalek::Signature::from_bytes(sig);
     vk.verify_strict(message, &sig).is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_file_key_is_private_signs_and_is_never_overwritten() {
+        let dir = std::env::temp_dir().join(format!("oc-kit-keyfile-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("operator.key");
+        let signer = FileSigner::generate(&path).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+        let sig = signer.sign(b"msg").unwrap();
+        assert!(verify(&signer.pubkey(), b"msg", &sig));
+        assert_eq!(FileSigner::load(&path).unwrap().pubkey(), signer.pubkey());
+        assert!(FileSigner::generate(&path).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

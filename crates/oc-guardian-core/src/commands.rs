@@ -17,7 +17,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
-use tracing::info;
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
@@ -36,20 +35,14 @@ use crate::keychain;
 /// Refuses to overwrite an existing identity — operators rotate via
 /// `oc-guardian portal forget` (or by deleting the keychain entry +
 /// config dir manually) and re-running `init`.
-pub fn init(hsm: String, config_dir: Option<String>) -> Result<()> {
+pub fn init(hsm: String, config_dir: Option<String>, key_file: Option<String>) -> Result<()> {
     let backend = HsmBackend::from_flag(&hsm)?;
 
-    // v0.1 ships only the os-keychain backend. Other --hsm values are
-    // accepted by the CLI parser so the surface is stable, but they
-    // route to OS-keychain in v0.1 with a clear note. v0.2 lights up
-    // YubiKey FIDO2 / Ledger / passkey first-class.
-    if !matches!(backend, HsmBackend::OsKeychain) {
-        info!(
-            "--hsm {hsm} requested · v0.1 ships only os-keychain. \
-             Falling back to OS keychain for now; v0.2 lights up \
-             hardware-token backends. Your operator pubkey is unchanged \
-             across the eventual rotation."
-        );
+    // Only the OS keychain (or, when asked for, a key file) is built.
+    // Other --hsm values are accepted so the surface is stable, and use
+    // the OS keychain.
+    if !matches!(backend, HsmBackend::OsKeychain) && key_file.is_none() {
+        println!("  note: --hsm {hsm} is not built yet · the key goes in the OS keychain instead");
     }
 
     let dir = resolve_dir(config_dir.as_deref())?;
@@ -67,18 +60,41 @@ pub fn init(hsm: String, config_dir: Option<String>) -> Result<()> {
         );
     }
 
-    // Generate + persist private key in OS keychain. Returns a signer
-    // bound to that entry; we use the signer to derive the public key
-    // for the on-disk pubkey/id files.
-    let signer = keychain::generate_and_persist().context("provisioning operator key")?;
-    let pubkey: OperatorPubKey = signer.pubkey();
+    // Generate + persist the private key: the OS keychain, or the key
+    // file the operator asked for. The signer gives the public key for the
+    // on-disk pubkey/id files.
+    let (pubkey, key_location): (OperatorPubKey, String) = match &key_file {
+        Some(path) => {
+            let signer = keychain::FileSigner::generate(std::path::Path::new(path))
+                .context("provisioning operator key file")?;
+            (signer.pubkey(), format!("file {path} (mode 0600)"))
+        }
+        None => {
+            let signer = keychain::generate_and_persist().context(
+                "provisioning operator key · on a machine without an OS keychain, use --key-file <path>",
+            )?;
+            let pubkey = signer.pubkey();
+            (
+                pubkey,
+                format!(
+                    "OS keychain · service=io.ochk.oc-guardian, account={}",
+                    pubkey.to_id().0
+                ),
+            )
+        }
+    };
     let id = pubkey.to_id();
 
     let pubkey_path = write_pubkey(&dir, &pubkey)?;
     let id_path = write_id(&dir, &id)?;
 
     let cfg = KitConfig {
-        hsm_backend: Some(hsm.to_string()),
+        hsm_backend: Some(if key_file.is_some() {
+            "file".to_string()
+        } else {
+            hsm.to_string()
+        }),
+        key_file: key_file.clone(),
         bridge: BridgeConfig::default(),
     };
     let kit_config_path = write_kit_config(&dir, &cfg)?;
@@ -106,12 +122,14 @@ pub fn init(hsm: String, config_dir: Option<String>) -> Result<()> {
         kit_config_path.file_name().unwrap().to_string_lossy()
     );
     println!();
-    println!(
-        "    private key    OS keychain · service=io.ochk.oc-guardian, account={}",
-        id.0
-    );
-    println!("    backend        {hsm}");
+    println!("    private key    {key_location}");
     println!();
+    if key_file.is_some() {
+        println!("  warning: the operator key is stored unencrypted in that file. Anyone who can");
+        println!("  read it can sign as you. Keep it on this machine only, readable by you only,");
+        println!("  and use the OS keychain on any machine that has one.");
+        println!();
+    }
     println!("  next steps:");
     println!("    1. oc-guardian register --transport https     # publish your pubkey to the OC operator registry");
     println!(
@@ -139,9 +157,9 @@ pub fn apply_prepare(out: String, questionnaire: Option<String>, _hsm: String) -
     let dir = resolve_dir(None)?;
     let id = read_id(&dir)?
         .context("no operator identity in config dir — run `oc-guardian init` first")?;
-    let signer = keychain::load(&id.0)?.with_context(|| {
+    let signer = keychain::load_signer(&id.0)?.with_context(|| {
         format!(
-            "operator {} has no key in the OS keychain — re-run `oc-guardian init`",
+            "operator {} has no key in the OS keychain or a key file — re-run `oc-guardian init`",
             id.0
         )
     })?;
@@ -329,12 +347,12 @@ pub fn apply_verify_acceptance(file: String, reviewer_pubkey_hex: String) -> Res
 // ── Shared helpers for the signed-envelope + portal commands ─────────
 
 /// Load the operator identity + keychain signer, or a clear error.
-fn load_operator() -> Result<(crate::identity::OperatorId, keychain::KeychainSigner)> {
+fn load_operator() -> Result<(crate::identity::OperatorId, Box<dyn Signer>)> {
     let dir = resolve_dir(None)?;
     let id = read_id(&dir)?.context("no operator identity — run `oc-guardian init` first")?;
-    let signer = keychain::load(&id.0)?.with_context(|| {
+    let signer = keychain::load_signer(&id.0)?.with_context(|| {
         format!(
-            "operator {} has no key in the OS keychain — re-run `oc-guardian init`",
+            "operator {} has no key in the OS keychain or a key file — re-run `oc-guardian init`",
             id.0
         )
     })?;
@@ -344,7 +362,7 @@ fn load_operator() -> Result<(crate::identity::OperatorId, keychain::KeychainSig
 /// Build + sign an `ActionEnvelope`. The nonce is unix-seconds (monotonic
 /// per run); the portal rejects equal-or-lower nonces it has seen.
 fn build_signed_envelope(
-    signer: &keychain::KeychainSigner,
+    signer: &dyn Signer,
     action: ActionType,
     params: serde_json::Value,
     federation: Option<String>,
@@ -457,9 +475,9 @@ pub fn federations_join(slug: String, _transport: String) -> Result<()> {
     println!("  joining federation {slug}:");
     println!("    1. an OC admin assigns you a guardian seat (after your application is accepted)");
     println!("    2. ratify the charter — that IS your join:");
-    println!("         oc-guardian charter sign --slug {slug}");
+    println!("         oc-guardian charter sign {slug}");
     println!("         oc-guardian charter publish --file charter-sig.json");
-    println!("    3. run DKG with your peers:  oc-guardian ceremony start …");
+    println!("    3. run DKG with your peers:  oc-guardian ceremony start --name <name> …");
     println!();
     Ok(())
 }
@@ -511,7 +529,7 @@ pub fn status() -> Result<()> {
     // Try to load the keychain entry to confirm the private key is
     // reachable. We don't sign anything — just verify the entry
     // exists.
-    let key_present = match keychain::load(&id.0) {
+    let key_present = match keychain::load_signer(&id.0) {
         Ok(Some(_)) => true,
         Ok(None) => false,
         Err(err) => {
@@ -547,12 +565,16 @@ pub fn status() -> Result<()> {
             )
         }
     );
+    let store = match &kit_cfg.key_file {
+        Some(path) => format!("key file {path}"),
+        None => "OS keychain".to_string(),
+    };
     println!(
-        "  private key      {}",
+        "  private key      {store} · {}",
         if key_present {
-            "OS keychain · reachable"
+            "reachable"
         } else {
-            "OS keychain · MISSING (rotation needed)"
+            "MISSING (rotation needed)"
         }
     );
     println!();
@@ -589,12 +611,11 @@ fn iso8601_utc(secs: u64) -> String {
     format!("{y:04}-{m:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z")
 }
 
-/// `oc-guardian alerts subscribe` · alert delivery is a portal-bridge
-/// feature; point the operator at it rather than fake a subscription.
+/// `oc-guardian alerts subscribe` · there is no alert feed yet; point the
+/// operator at the published incidents rather than fake a subscription.
 pub fn alerts_subscribe(federation: String) -> Result<()> {
     println!();
-    println!("  alert delivery for {federation} is a portal-bridge feature:");
-    println!("    oc-guardian bridge enable    # opt into portal-mediated signed requests");
+    println!("  the kit has no alert feed for {federation} yet (the portal bridge is not built).");
     println!("  published incidents are visible at ochk.app/me/operator/incidents");
     println!("  and the public /federations timeline.");
     println!();
@@ -619,7 +640,12 @@ pub fn alerts_post(federation: String, severity: String, body: String) -> Result
         "body": body,
         "tags": [],
     });
-    let env = build_signed_envelope(&signer, ActionType::AlertPublish, params, Some(federation))?;
+    let env = build_signed_envelope(
+        signer.as_ref(),
+        ActionType::AlertPublish,
+        params,
+        Some(federation),
+    )?;
     write_envelope(&env, "incident.json", "incident", "/api/operator/incidents")
 }
 
@@ -647,7 +673,12 @@ pub fn payouts_claim(federation: String, to: String, amount: Option<u64>) -> Res
         .context("system clock before epoch")?
         .as_secs();
     let params = payouts_claim_params(&id.0, &federation, &to, amount, now)?;
-    let env = build_signed_envelope(&signer, ActionType::PayoutsClaim, params, Some(federation))?;
+    let env = build_signed_envelope(
+        signer.as_ref(),
+        ActionType::PayoutsClaim,
+        params,
+        Some(federation),
+    )?;
     write_envelope(
         &env,
         "payouts-claim.json",
@@ -797,7 +828,12 @@ pub fn exit_handoff(federation: String, replacement: String, effective_date: Str
     if let Some(succ) = successor_operator_id_from(&replacement) {
         params["successor_operator_id"] = serde_json::Value::String(succ);
     }
-    let env = build_signed_envelope(&signer, ActionType::ExitHandoff, params, Some(federation))?;
+    let env = build_signed_envelope(
+        signer.as_ref(),
+        ActionType::ExitHandoff,
+        params,
+        Some(federation),
+    )?;
     write_envelope(
         &env,
         "exit-handoff.json",
@@ -831,7 +867,12 @@ pub fn exit_ratify(
         note,
         now,
     )?;
-    let env = build_signed_envelope(&signer, ActionType::ExitRatify, params, Some(federation))?;
+    let env = build_signed_envelope(
+        signer.as_ref(),
+        ActionType::ExitRatify,
+        params,
+        Some(federation),
+    )?;
     write_envelope(
         &env,
         "exit-ratify.json",
@@ -900,7 +941,7 @@ fn hex64(value: &str, flag: &str) -> Result<String> {
 /// signer, so the test can pin it against the portal's own signer.
 #[allow(clippy::too_many_arguments)]
 fn sign_attest_delegation(
-    signer: &impl Signer,
+    signer: &dyn Signer,
     federation_slug: &str,
     seat_index: u32,
     attest_pubkey: &str,
@@ -962,7 +1003,7 @@ pub fn attest_delegate(
         .context("system clock before epoch")?
         .as_secs();
     let delegation = sign_attest_delegation(
-        &signer,
+        signer.as_ref(),
         &federation,
         seat_index,
         &attest_pubkey,

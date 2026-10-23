@@ -114,12 +114,12 @@ pub fn emit(
 }
 
 /// The delegated attestation key when one is configured, else the operator
-/// key from the keychain, else nothing.
+/// key (keychain or key file), else nothing.
 fn attestation_signer(rt: &FedimintdRuntime) -> Result<Option<Box<dyn Signer>>> {
     if let Some(key) = &rt.attest_key {
         return Ok(Some(Box::new(StaticSigner::from_hex(&key.0)?)));
     }
-    Ok(keychain::load(&rt.operator_id)?.map(|s| Box::new(s) as Box<dyn Signer>))
+    keychain::load_signer(&rt.operator_id)
 }
 
 fn post(url: &str, signed: &SignedAttestation) -> Result<()> {
@@ -169,6 +169,7 @@ mod tests {
                 "OC_ESPLORA_URL".to_string(),
                 "https://mempool.space/api".to_string(),
             ),
+            ("OC_BITCOIN_NETWORK".to_string(), "signet".to_string()),
         ]);
         FedimintdRuntime::from_vars(|k| m.get(k).cloned()).unwrap()
     }

@@ -121,6 +121,12 @@ struct InitArgs {
     /// is `~/.config/oc-guardian/`.
     #[arg(long)]
     config_dir: Option<String>,
+
+    /// Keep the operator key in this file instead of the OS keychain, for a
+    /// machine without one (a headless server). The file is the key:
+    /// anyone who can read it can sign as you.
+    #[arg(long)]
+    key_file: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -180,18 +186,42 @@ enum FederationsCommand {
 
 #[derive(Subcommand)]
 enum CeremonyCommand {
-    /// Start the DKG ceremony with peer guardians.
+    /// Set this guardian's name and password (the leader also sets the
+    /// federation's name and size), then print its setup code for the
+    /// other guardians. Run it as soon as the guardian boots: until then the
+    /// first caller of the setup API sets the password.
     Start {
-        /// Comma-separated peer URLs.
+        /// This guardian's name.
         #[arg(long)]
-        peers: String,
-        /// Setup code from the federation organizer.
+        name: String,
+        /// This guardian leads the setup.
         #[arg(long)]
-        setup_code: String,
+        leader: bool,
+        /// The federation's name (leader only).
+        #[arg(long)]
+        federation_name: Option<String>,
+        /// How many guardians the federation has (leader only).
+        #[arg(long)]
+        federation_size: Option<u32>,
+        /// File holding the guardian password. Default: FM_PASSWORD.
+        #[arg(long)]
+        password_file: Option<String>,
     },
-    /// Show in-progress ceremony state.
+    /// Add the other guardians' setup codes, one --code for each.
+    AddPeer {
+        #[arg(long = "code", required = true)]
+        codes: Vec<String>,
+        #[arg(long)]
+        password_file: Option<String>,
+    },
+    /// Start DKG, once every guardian has every other guardian's code.
+    Dkg {
+        #[arg(long)]
+        password_file: Option<String>,
+    },
+    /// Show the phase fedimintd reports and the recorded progress.
     Status,
-    /// Finalize the ceremony after all rounds complete.
+    /// Once consensus is running, record it and print the invite code.
     Finalize,
 }
 
@@ -237,16 +267,24 @@ enum FedimintdCommand {
     Install {
         #[arg(long)]
         version: String,
+        /// Directory to install into. Default: <FM_DATA_DIR>/../bin, else
+        /// /usr/local/bin.
+        #[arg(long)]
+        dir: Option<String>,
     },
     /// Run the wrapped fedimintd daemon. Reads the runtime config from
-    /// the OC-injected env (OC_*/ports); `--config` optionally overrides
-    /// the fedimintd binary path (default: resolve from PATH).
+    /// the OC-injected env (OC_*/ports); `--config` is the path of the
+    /// fedimintd binary to run (default: resolve from PATH).
     Run {
         #[arg(long, default_value = "auto")]
         config: String,
     },
-    /// Show wrapped fedimintd's process status.
-    Status,
+    /// Show wrapped fedimintd's status and setup phase.
+    Status {
+        /// The fedimintd binary path, as for `run`.
+        #[arg(long, default_value = "auto")]
+        config: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -368,7 +406,9 @@ fn main() -> Result<()> {
     init_tracing(cli.verbose);
 
     match cli.command {
-        Command::Init(args) => oc_guardian_core::commands::init(args.hsm, args.config_dir),
+        Command::Init(args) => {
+            oc_guardian_core::commands::init(args.hsm, args.config_dir, args.key_file)
+        }
         Command::Apply(cmd) => match cmd {
             ApplyCommand::Prepare {
                 out,
@@ -391,8 +431,25 @@ fn main() -> Result<()> {
             }
         },
         Command::Ceremony(cmd) => match cmd {
-            CeremonyCommand::Start { peers, setup_code } => {
-                oc_guardian_fedimint::ceremony::start(peers, setup_code)
+            CeremonyCommand::Start {
+                name,
+                leader,
+                federation_name,
+                federation_size,
+                password_file,
+            } => oc_guardian_fedimint::ceremony::LocalParams::new(
+                name,
+                leader,
+                federation_name,
+                federation_size,
+            )
+            .and_then(|p| oc_guardian_fedimint::ceremony::start(p, password_file)),
+            CeremonyCommand::AddPeer {
+                codes,
+                password_file,
+            } => oc_guardian_fedimint::ceremony::add_peer(codes, password_file),
+            CeremonyCommand::Dkg { password_file } => {
+                oc_guardian_fedimint::ceremony::dkg(password_file)
             }
             CeremonyCommand::Status => oc_guardian_fedimint::ceremony::status(),
             CeremonyCommand::Finalize => oc_guardian_fedimint::ceremony::finalize(),
@@ -405,9 +462,11 @@ fn main() -> Result<()> {
             }
         },
         Command::Fedimintd(cmd) => match cmd {
-            FedimintdCommand::Install { version } => oc_guardian_fedimint::install(version),
+            FedimintdCommand::Install { version, dir } => {
+                oc_guardian_fedimint::install(version, dir)
+            }
             FedimintdCommand::Run { config } => oc_guardian_fedimint::run(config),
-            FedimintdCommand::Status => oc_guardian_fedimint::status(),
+            FedimintdCommand::Status { config } => oc_guardian_fedimint::status(config),
         },
         Command::Status => oc_guardian_core::commands::status(),
         Command::Alerts(cmd) => match cmd {

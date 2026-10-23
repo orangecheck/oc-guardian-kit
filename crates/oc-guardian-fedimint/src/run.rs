@@ -13,7 +13,8 @@ use anyhow::{Context, Result};
 use tracing::{error, info, warn};
 
 use crate::attest;
-use crate::config::FedimintdRuntime;
+use crate::config::{is_loopback_bind, FedimintdRuntime, SetupPassword};
+use crate::gate;
 use crate::status;
 
 /// How often the supervisor emits a runtime attestation.
@@ -32,6 +33,23 @@ pub fn resolve_binary(hint: &str) -> PathBuf {
     } else {
         PathBuf::from(h)
     }
+}
+
+/// What an un-set-up guardian exposes. Until DKG writes its config,
+/// fedimintd's setup API answers on the API bind and the setup UI on the
+/// UI bind, and the first caller of `set_local_params` sets the password.
+pub fn setup_exposure(rt: &FedimintdRuntime) -> Vec<String> {
+    if rt.is_set_up() {
+        return Vec::new();
+    }
+    let mut open = Vec::new();
+    if !is_loopback_bind(&rt.bind_api) {
+        open.push(format!("the setup API on {}", rt.bind_api));
+    }
+    if !is_loopback_bind(&rt.bind_ui) {
+        open.push(format!("the setup UI on {}", rt.bind_ui));
+    }
+    open
 }
 
 /// Build the spawn command for fedimintd with the mapped FM_* env. Pure
@@ -85,12 +103,33 @@ pub fn run(bin_hint: String) -> Result<()> {
         "starting guardian · supervising fedimintd"
     );
 
+    if let Some(pw) = rt.setup_password.as_ref().filter(|_| !rt.is_set_up()) {
+        // Attestations carry on through setup.
+        spawn_attestation_ticker(rt.clone(), version.clone());
+        setup_behind_gate(&rt, &bin, pw)?;
+        return supervise(&rt, &bin);
+    }
+
+    let open = setup_exposure(&rt);
+    if !open.is_empty() {
+        warn!(
+            "this guardian is not set up yet, and {} can be reached from other machines. \
+             The first caller to set local params sets the guardian's password: set them now, \
+             with `oc-guardian ceremony start` on this machine",
+            open.join(" and ")
+        );
+    }
+
     // Attestation ticker on a background thread · operator-signed, no TEE.
     spawn_attestation_ticker(rt.clone(), version.clone());
+    supervise(&rt, &bin)
+}
 
+/// Run fedimintd with the configured binds, restarting it with backoff.
+fn supervise(rt: &FedimintdRuntime, bin: &PathBuf) -> Result<()> {
     let mut backoff = BACKOFF_MIN;
     loop {
-        match spawn_once(&rt, &bin) {
+        match spawn_once(rt, bin) {
             Ok(mut child) => {
                 backoff = BACKOFF_MIN; // a clean start resets backoff
                 let exit = child.wait().context("waiting on fedimintd")?;
@@ -103,6 +142,53 @@ pub fn run(bin_hint: String) -> Result<()> {
         std::thread::sleep(backoff);
         backoff = (backoff * 2).min(BACKOFF_MAX);
     }
+}
+
+/// Until DKG writes the consensus config: fedimintd's API and UI on
+/// loopback, and the setup gate on the public API bind. fedimintd forgets
+/// local params when it restarts, so the gate holds across every restart.
+/// Returns once the guardian is set up, with fedimintd stopped.
+fn setup_behind_gate(rt: &FedimintdRuntime, bin: &PathBuf, pw: &SetupPassword) -> Result<()> {
+    let mut local = rt.clone();
+    local.bind_api = format!("127.0.0.1:{}", gate::free_loopback_port()?);
+    local.bind_ui = format!("127.0.0.1:{}", rt.ui_port);
+    let gate = gate::start(&rt.bind_api, local.local_api_base(), pw.0.clone())?;
+    info!(
+        public = %rt.bind_api,
+        internal = %local.bind_api,
+        "not set up yet · fedimintd's API is on loopback, and the setup gate answers {} for it",
+        rt.bind_api
+    );
+    let mut child: Option<Child> = None;
+    let mut backoff = BACKOFF_MIN;
+    while !rt.is_set_up() {
+        let exited = match child.as_mut() {
+            None => true,
+            Some(c) => c.try_wait().context("checking on fedimintd")?.is_some(),
+        };
+        if exited {
+            if child.is_some() {
+                warn!("fedimintd exited during setup · it forgets its local params and setup code; set them again (the gate still asks for the setup password)");
+                std::thread::sleep(backoff);
+                backoff = (backoff * 2).min(BACKOFF_MAX);
+            }
+            child = match spawn_once(&local, bin) {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    error!(error = %e, "failed to spawn fedimintd · retrying");
+                    None
+                }
+            };
+        }
+        std::thread::sleep(Duration::from_secs(2));
+    }
+    if let Some(mut c) = child {
+        let _ = c.kill();
+        let _ = c.wait();
+    }
+    gate.stop();
+    info!("DKG is done · closing the setup gate and giving fedimintd the public API bind");
+    Ok(())
 }
 
 fn spawn_once(rt: &FedimintdRuntime, bin: &PathBuf) -> Result<Child> {
@@ -147,6 +233,7 @@ mod tests {
                 "OC_ESPLORA_URL".to_string(),
                 "https://mempool.space/api".to_string(),
             ),
+            ("OC_BITCOIN_NETWORK".to_string(), "signet".to_string()),
         ]);
         FedimintdRuntime::from_vars(|k| m.get(k).cloned()).unwrap()
     }
@@ -182,5 +269,26 @@ mod tests {
             "fedimint://g.example.com:9000"
         );
         assert_eq!(cmd.get_program().to_string_lossy(), "fedimintd");
+    }
+
+    #[test]
+    fn an_un_set_up_guardian_says_which_setup_surfaces_are_reachable() {
+        let dir = std::env::temp_dir().join(format!("oc-kit-exposure-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut r = rt();
+        r.data_dir = dir.clone();
+        // Defaults: the API binds all interfaces, the UI loopback.
+        assert_eq!(setup_exposure(&r), vec!["the setup API on 0.0.0.0:9001"]);
+        r.bind_ui = "0.0.0.0:8175".into();
+        assert_eq!(setup_exposure(&r).len(), 2);
+        r.bind_api = "127.0.0.1:9001".into();
+        r.bind_ui = "127.0.0.1:8175".into();
+        assert!(setup_exposure(&r).is_empty());
+        // Once set up, nothing is open to claim.
+        r.bind_api = "0.0.0.0:9001".into();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("consensus.json"), "{}").unwrap();
+        assert!(setup_exposure(&r).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
