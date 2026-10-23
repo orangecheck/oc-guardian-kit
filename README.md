@@ -1,10 +1,10 @@
 # oc-guardian-kit
 
-**The operator's actual control surface for running an OrangeCheck-affiliated Fedimint guardian.** Self-serve. Operator-controlled. Composes with `fedimintd` rather than replacing it. Optional companion to the [`ochk.app/me/operator`](https://ochk.app/me/operator) portal — the kit works end-to-end without ever touching the portal.
+**The operator's own tooling for running a Fedimint guardian in an orangecheck federation.** Self-serve. Composes with `fedimintd` rather than replacing it. Optional companion to the [`ochk.app/me/operator`](https://ochk.app/me/operator) portal: everything an operator signs, the kit can sign without the portal.
 
-> **Architectural commitment:** OC the company never custodies funds, never operates guardians, never holds the surfaces that determine federation behavior. This kit is the tooling that makes that commitment scale.
+> **Where things stand.** While the system is in testing, orangecheck holds every role, guardian seats included: it runs every test seat, on its own hardware, with its own keys ([ochk.app/custody](https://ochk.app/custody) shows the live picture). The kit is how independent operators take those seats over. orangecheck as the lasting operator is never the design.
 >
-> **Property the kit guarantees:** every action runs under operator-controlled credentials on operator-controlled infrastructure. OC has no access to your hardware, your keys, your `fedimintd`, or your operator identity at any point. The portal at `ochk.app/me/operator` is convenience, not control — it can request signatures from your hardware, but it cannot produce them.
+> **What the kit guarantees for a seat you run yourself:** your operator key stays on your machine, and anything that carries your authority (a charter ratification, a payout claim, an exit) is signed there. The portal can ask; it cannot sign for you.
 
 ## Install
 
@@ -14,7 +14,7 @@ Verified-release install (recommended). Archives exist for
 ```sh
 T=x86_64-unknown-linux-gnu
 # 1. Pull the signed release.
-gh release download v0.2.5 -R orangecheck/oc-guardian-kit -p "oc-guardian-$T.*"
+gh release download v0.2.6 -R orangecheck/oc-guardian-kit -p "oc-guardian-$T.*"
 
 # 2. Verify the cosign keyless signature.
 cosign verify-blob \
@@ -32,10 +32,10 @@ sudo install oc-guardian /usr/local/bin/
 oc-guardian --version
 ```
 
-Build-from-source install (for the trust-no-binaries among us):
+Build-from-source install:
 
 ```sh
-git clone --depth 1 --branch v0.2.5 https://github.com/orangecheck/oc-guardian-kit
+git clone --depth 1 --branch v0.2.6 https://github.com/orangecheck/oc-guardian-kit
 cd oc-guardian-kit
 cargo build --release --locked -p oc-guardian-cli  # dependency versions pinned by Cargo.lock
 sudo install target/release/oc-guardian /usr/local/bin/
@@ -44,48 +44,103 @@ sudo install target/release/oc-guardian /usr/local/bin/
 ## Quickstart
 
 ```sh
-# Generate your operator identity (Ed25519). Stored in your OS keychain
-# OR backed by a hardware token (--hsm yubikey | ledger | passkey).
-oc-guardian init --hsm yubikey
+# 1. Your operator identity (Ed25519). The private key goes in your OS keychain.
+oc-guardian init
+#    On a server with no OS keychain, keep it in a file instead. The file is
+#    the key: anyone who can read it can sign as you.
+oc-guardian init --key-file /var/lib/oc-guardian/operator.key
 
-# Apply to the program. Bypass: email apply@ochk.io with the same content.
-oc-guardian apply
+# 2. Apply. Email apply@ochk.io the signed envelope this writes.
+oc-guardian apply prepare --out application.json --questionnaire ./answers.md
 
-# Once accepted, you'll be matched with a federation seeking guardians.
-oc-guardian federations list
-oc-guardian federations join <federation-slug>
+# 3. Once accepted and given a seat, review and ratify the federation's charter.
+oc-guardian charter fetch <federation-slug>
+oc-guardian charter sign <federation-slug> --out charter-sig.json
+oc-guardian charter publish --file charter-sig.json
 
-# Participate in the DKG ceremony with the other guardians.
-oc-guardian ceremony start --peers '<peer1-url>,<peer2-url>,<peer3-url>'
+# 4. Run the guardian (see "Running fedimintd" for its settings).
+oc-guardian fedimintd run
 
-# Sign the federation charter. Hardware key signs; OC sees only the
-# signature.
-oc-guardian charter sign --file charter.md
-
-# Run the guardian.
-oc-guardian fedimintd run --config /etc/oc-guardian/config.toml
-
-# Day-to-day operations.
-oc-guardian status                          # health + peer view
-oc-guardian alerts list                     # subscribed federation alerts
-oc-guardian audit log --since 24h           # local audit ledger
+# 5. Set up the federation with the other guardians (see "The DKG ceremony").
+FM_PASSWORD=… oc-guardian ceremony start --name <your-guardian-name>
 ```
+
+## Running fedimintd
+
+`oc-guardian fedimintd run` supervises a `fedimintd` 0.11 process: it starts it, restarts it with backoff, and sends signed liveness reports. `--config` is the path of the `fedimintd` binary to run; without it, `fedimintd` is taken from `PATH`. `oc-guardian fedimintd install --version 0.11.4 [--dir <dir>]` downloads a pinned, hash-checked release.
+
+Settings come from the environment:
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `OC_OPERATOR_ID`, `OC_OPERATOR_PUBKEY_HEX`, `OC_FEDERATION_SLUG` | yes | who runs this seat, in which federation |
+| `OC_BITCOIN_NETWORK` | yes | `bitcoin`, `testnet`, `testnet4`, `signet` or `regtest`. There is no default. |
+| `OC_ESPLORA_URL`, or `OC_BITCOIND_URL` + `OC_BITCOIND_USERNAME` + `OC_BITCOIND_PASSWORD` | yes | the chain source fedimintd watches |
+| `OC_PUBLIC_HOST` | yes, off Fly | the name peers and clients reach this guardian at (on Fly, `<app>.fly.dev`) |
+| `OC_P2P_PORT`, `OC_API_PORT`, `OC_UI_PORT` | no | 9000, 9001, 8175 |
+| `FM_BIND_P2P`, `FM_BIND_API`, `FM_BIND_UI`, `FM_P2P_URL`, `FM_API_URL`, `FM_DATA_DIR` | no | fedimintd's own settings. Set them and the kit passes them through unchanged. |
+| `OC_GUARDIAN_SETUP_PASSWORD` | no | turns on the setup gate (below) until DKG is done |
+
+Without your own binds, P2P and the API listen on all interfaces (peers and clients need them), and the **setup UI listens on 127.0.0.1 only**. The API URL is `ws://` for a loopback host and `wss://` otherwise (behind TLS); set `FM_API_URL` for anything else.
+
+**Until DKG has run, whoever reaches the setup API first sets the guardian's password.** fedimintd serves its setup API on the API port and needs no password until local params are set, so the first caller claims the guardian. It also forgets local params, and gets a new setup code, every time it restarts, so a restart before DKG reopens the window. Close it one of two ways:
+
+- **Set `OC_GUARDIAN_SETUP_PASSWORD`.** Until DKG writes the consensus config, the kit keeps fedimintd's API on loopback and answers the public API port itself. It passes on `setup_status` and `invite_code` to anyone, and every other call only if it carries that password. Once DKG is done it hands the port back to fedimintd. Use the same password for the ceremony (`FM_PASSWORD` or `--password-file`).
+- **Or bind the API to loopback** (`FM_BIND_API=127.0.0.1:9001`) until DKG is done, then restart with the public bind. DKG runs over P2P; peers never call each other's API during it.
+
+Without either, the kit warns at start-up while the API is reachable from other machines. `oc-guardian ceremony start` right after boot narrows the window, until the next restart.
+
+**On Fly**, the setup UI isn't one of the app's public services. To reach it over the org's private network with `fly proxy 8175:8175 -a <app>`, bind it to the machine's private IPv6 address (the one `fly-local-6pn` names in `/etc/hosts`): `FM_BIND_UI=[<that address>]:8175`. Every machine in the org can reach that address, not just yours.
+
+## The DKG ceremony
+
+fedimintd 0.11 sets a federation up in four steps. The kit takes them through the setup API on the same machine, so the guardian password never crosses the network. The password comes from `--password-file` or `FM_PASSWORD`.
+
+```sh
+# Every guardian: name and password. The leader also names the federation and its size.
+oc-guardian ceremony start --name g0 --leader --federation-name my-fed --federation-size 4
+oc-guardian ceremony start --name g1
+#   → prints this guardian's setup code. Send it to every other guardian.
+
+# Every guardian: add every other guardian's code.
+oc-guardian ceremony add-peer --code <code-of-g1> --code <code-of-g2> --code <code-of-g3>
+
+# Every guardian, once all codes are in.
+oc-guardian ceremony dkg
+
+# Until it says RUNNING. It reports what fedimintd itself says, never just "the port answers".
+oc-guardian ceremony status
+
+# Once running: records it and prints the invite code.
+oc-guardian ceremony finalize
+```
+
+The portal at `ochk.app/me/operator` drives the same four calls for the seats orangecheck hosts. Seats it hosts are set up from the portal; the kit is for seats you run.
 
 ## Lifecycle commands
 
-Every lifecycle stage of the program (recruitment → exit) has a kit command. The portal mirrors the same stages but routes through the same primitives. See [BYPASS.md](./BYPASS.md) for the canonical mapping.
+Every lifecycle stage of the program (application → exit) has a kit command. See [BYPASS.md](./BYPASS.md) for the mapping to the portal.
 
 | Stage | Command |
 |---|---|
-| Application | `oc-guardian apply` |
-| Onboarding | `oc-guardian init` |
-| Federation matching | `oc-guardian federations {list, join, leave}` |
-| Ceremony | `oc-guardian ceremony {start, status, finalize}` |
-| Charter signing | `oc-guardian charter {fetch, sign, publish}` |
-| Status | `oc-guardian status` |
-| Incident comms | `oc-guardian alerts {subscribe, post}` |
-| Payouts | `oc-guardian payouts {list, claim}` |
-| Exit | `oc-guardian exit-handoff <replacement-pubkey>` |
+| Application | `oc-guardian apply {prepare, verify-acceptance}` |
+| Onboarding | `oc-guardian init`, `oc-guardian register` (checks the registry) |
+| Federations | `oc-guardian federations list` (`join` and `leave` print the steps) |
+| Ceremony | `oc-guardian ceremony {start, add-peer, dkg, status, finalize}` |
+| Charter | `oc-guardian charter {fetch, sign, publish}` |
+| Run | `oc-guardian fedimintd {install, run, status}` |
+| Local state | `oc-guardian status` |
+| Incidents | `oc-guardian alerts post` |
+| Payouts | `oc-guardian payouts claim <slug> --to <lightning-address>` |
+| Exit | `oc-guardian exit-handoff`, `oc-guardian exit-ratify` |
+| Hosted attestations | `oc-guardian attest-delegate` |
+
+## What is not built yet
+
+- **Hardware tokens.** `--hsm yubikey | ledger | passkey` is accepted and does nothing different: the key goes in the OS keychain (or the `--key-file` you gave). A hardware token that never releases the key is planned, not shipped.
+- **The portal bridge.** `oc-guardian bridge {enable, allow, disable, status}` only logs that it is a stub. Nothing subscribes to portal requests, and no allowlist is kept.
+- **Transports other than HTTPS.** `charter publish --transport` takes `https` only. `register` and `federations join` accept `--transport` and ignore it.
+- **`alerts subscribe`, `payouts list`, `audit log --since`.** They point at the portal or list local files; there is no feed, ledger query or time filter.
 
 ## Hosted guardians
 
@@ -95,27 +150,10 @@ That key signs liveness and nothing else: not the charter, a payout claim, an ex
 
 **A hosted guardian's liveness is only as independent as orangecheck**, which runs the machine and made its key. Where that matters, run the guardian on hardware you control.
 
-## Optional portal bridge
-
-Operators who want the portal at `ochk.app/me/operator` to drive their guardian (push UI for ceremony, dashboards, signing requests) opt in via:
-
-```sh
-oc-guardian bridge enable                   # subscribe to portal action requests
-oc-guardian bridge allow <action-type>      # explicit allowlist per action
-```
-
-When the bridge is enabled, the kit accepts portal-signed action *requests*. Each request becomes a notification in the kit; the kit then asks the operator's hardware key to sign the request. The signed action is what actually applies. **The portal never produces a signature on the operator's behalf.**
-
-Disable any time:
-
-```sh
-oc-guardian bridge disable                  # operator's guardian keeps running
-```
-
 ## Documentation
 
-- [`BYPASS.md`](./BYPASS.md) — every portal feature ↔ kit-only equivalent. First-class, maintained at parity.
-- [`SECURITY.md`](./SECURITY.md) — threat model, key handling, what OC sees vs. doesn't.
+- [`BYPASS.md`](./BYPASS.md) — every portal feature and its kit-only equivalent.
+- [`SECURITY.md`](./SECURITY.md) — threat model, key handling, what orangecheck sees and doesn't.
 - [`CHARTER-FORMAT.md`](./CHARTER-FORMAT.md) — canonical charter document spec (RFC 8785 JSON).
 - [Source](https://github.com/orangecheck/oc-guardian-kit) — open source, MIT.
 - [Releases](https://github.com/orangecheck/oc-guardian-kit/releases) — signed; verified via cosign + SLSA.
@@ -123,7 +161,3 @@ oc-guardian bridge disable                  # operator's guardian keeps running
 ## License
 
 MIT. See [LICENSE](./LICENSE).
-
-## Why "kit" not "client"?
-
-A client implies a server it talks to. The kit implies a toolbox the operator runs against their own infrastructure. There is no central server you depend on; the portal at `ochk.app/me/operator` is one of many surfaces the kit can interoperate with, and operators can choose to use none of them.

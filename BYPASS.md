@@ -13,18 +13,18 @@ Every row here is a portal route the operator might land on, paired with the kit
 | # | Lifecycle stage | Portal path | Kit-only equivalent |
 |---|---|---|---|
 | 01 | Apply to the program | `ochk.app/me/operator/apply`: paste your answers, signed with the key in your browser | Email `apply@ochk.io` with the application questionnaire — see [§01 below](#01-apply-to-the-program) |
-| 02 | Get accepted + onboarded | Portal walks WebAuthn key registration in your browser | `oc-guardian init --hsm <yubikey\|ledger\|passkey\|os-keychain>` — see [§02](#02-get-accepted--onboarded) |
-| 03 | Discover federations seeking guardians | Portal lists federations with seats open | `oc-guardian federations list` (queries the same public registry directly) — see [§03](#03-discover-federations-seeking-guardians) |
-| 04 | Join a federation | Portal mediates introduction + opt-in | `oc-guardian federations join <slug>` against the federation's public coordinator URL — see [§04](#04-join-a-federation) |
-| 05 | Run the DKG ceremony | Portal coordinates message passing between guardians | `oc-guardian ceremony start --peers <urls>` — direct authenticated HTTPS between guardians, see [§05](#05-run-the-dkg-ceremony) |
-| 06 | Sign the federation charter | Portal renders charter, requests WebAuthn signature | `oc-guardian charter sign --file charter.md --hsm yubikey` — see [§06](#06-sign-the-federation-charter) |
-| 07 | Run the guardian | Portal shows install + run instructions | `oc-guardian fedimintd run --config /etc/oc-guardian/config.toml` — see [§07](#07-run-the-guardian) |
-| 08 | Operational status | Portal dashboard mirrors guardian's status | Guardian's local `/status` endpoint + `oc-guardian status` CLI — see [§08](#08-operational-status) |
-| 09 | Receive incident alerts | Portal hosts alerts feed | Subscribe to the federation's published Nostr alerts channel directly — see [§09](#09-receive-incident-alerts) |
-| 10 | Post an incident update | Portal mediates the message + signs authorship | `oc-guardian alerts post --severity <level> --body <message>` signs locally — see [§10](#10-post-an-incident-update) |
-| 11 | Track payouts | Portal shows accrued payouts + claim button | `oc-guardian payouts list` queries the federation's payout ledger directly — see [§11](#11-track-payouts) |
-| 12 | Graceful exit | Portal coordinates handoff to replacement | `oc-guardian exit-handoff <replacement-pubkey>` + bilateral peer communication — see [§12](#12-graceful-exit) |
-| 13 | Deauthenticate from portal | Portal "delete account" button | `oc-guardian bridge disable` + ignore the portal forever; your guardian is unaffected — see [§13](#13-deauthenticate-from-portal) |
+| 02 | Get accepted + onboarded | Portal registers the key in your browser | `oc-guardian init` (OS keychain, or `--key-file` on a server) — see [§02](#02-get-accepted--onboarded) |
+| 03 | Discover federations seeking guardians | Portal lists federations with seats open | `oc-guardian federations list` (the same directory, read directly) — see [§03](#03-discover-federations-seeking-guardians) |
+| 04 | Join a federation | Portal mediates the seat and the charter | A seat assignment plus your charter ratification — see [§04](#04-join-a-federation) |
+| 05 | Run the DKG ceremony | Portal drives the setup API of the seats it hosts | `oc-guardian ceremony {start, add-peer, dkg, status, finalize}` on your own guardian — see [§05](#05-run-the-dkg-ceremony) |
+| 06 | Sign the federation charter | Portal renders the charter and asks your key to sign | `oc-guardian charter {fetch, sign, publish}` — see [§06](#06-sign-the-federation-charter) |
+| 07 | Run the guardian | Portal shows install + run instructions | `oc-guardian fedimintd run` — see [§07](#07-run-the-guardian) |
+| 08 | Operational status | Portal dashboard | `oc-guardian status`, `oc-guardian fedimintd status`, `oc-guardian verify-status` — see [§08](#08-operational-status) |
+| 09 | Receive incident alerts | Portal alerts feed | The portal's published incidents; the kit has no feed yet — see [§09](#09-receive-incident-alerts) |
+| 10 | Post an incident update | Portal "post update", signed by your key | `oc-guardian alerts post` writes a signed envelope — see [§10](#10-post-an-incident-update) |
+| 11 | Track payouts | Portal shows accrued payouts + claim button | `oc-guardian payouts claim <slug> --to <lightning-address>` signs a claim — see [§11](#11-track-payouts) |
+| 12 | Graceful exit | Portal coordinates handoff to replacement | `oc-guardian exit-handoff --federation <slug> --replacement <pubkey> --effective-date <date>` — see [§12](#12-graceful-exit) |
+| 13 | Deauthenticate from portal | Portal "delete account" button | `oc-guardian portal forget` clears local state; your guardian is unaffected — see [§13](#13-deauthenticate-from-portal) |
 | 14 | Let a hosted guardian attest | "Let this guardian attest" on the seat's hosted status | `oc-guardian attest-delegate --federation <slug> --seat <n> --attest-pubkey <hex> --block-height <h> --block-hash <hash>` — see [§14](#14-let-a-hosted-guardian-attest) |
 
 ---
@@ -36,10 +36,10 @@ Every row here is a portal route the operator might land on, paired with the kit
 **Bypass:**
 
 1. Get the application questionnaire from this repo at [`docs/application-questionnaire.md`](./docs/application-questionnaire.md).
-2. Fill it out. Generate an Ed25519 application key locally:
+2. Fill it out, then sign it with your operator key:
 
    ```sh
-   oc-guardian apply prepare --out application.json --hsm yubikey
+   oc-guardian apply prepare --out application.json --questionnaire ./answers.md
    ```
 
    This produces a signed application envelope you can attach to email. The envelope contains a hash of the questionnaire content.
@@ -65,28 +65,27 @@ The data flowing through this path is byte-for-byte identical to what the portal
 
 ## §02 — Get accepted + onboarded
 
-**Portal path:** Portal opens a WebAuthn registration prompt, generates a credential bound to your hardware token, registers the public key with the OC operator registry.
+**Portal path:** the portal registers the key in your browser.
 
 **Bypass:**
 
 ```sh
-# Generate your operator identity locally. Backed by hardware token of
-# your choice; private key never leaves the token.
-oc-guardian init --hsm yubikey
+# Generate your operator identity. The private key goes in your OS keychain.
+oc-guardian init
 
-# This produces:
+# On a server with no OS keychain, keep the key in a file instead (mode 0600).
+# The file is the key: anyone who can read it can sign as you.
+oc-guardian init --key-file /var/lib/oc-guardian/operator.key
+
+# Either way this writes:
 #   ~/.config/oc-guardian/operator.pub  — your Ed25519 public key
 #   ~/.config/oc-guardian/operator.id   — operator identifier (hash of pubkey)
-# The private key stays inside the YubiKey.
 
-# Register your public key with the OC operator registry. Default
-# transport is HTTPS to the registry's public endpoint; can also be
-# done via signed email to operators-registry@ochk.io.
-oc-guardian register --transport https        # default
-oc-guardian register --transport email        # for operators behind firewalls
+# Check whether your key is in the public operator registry (it is once accepted).
+oc-guardian register
 ```
 
-The registry is just a list of operator public keys. It's published as an OC envelope at `https://ochk.io/.well-known/oc-guardian-operators.json`, signed by the OC release key. Federations consult this list when matching guardians to seats. Operators can register without ever loading any web UI.
+`--hsm yubikey | ledger | passkey` is accepted, but no hardware-token backend is built yet: the key still goes in the OS keychain. The registry is the public list of accepted operator keys at `me.ochk.io/api/operator/registry`.
 
 ---
 
@@ -100,170 +99,132 @@ The registry is just a list of operator public keys. It's published as an OC env
 oc-guardian federations list
 ```
 
-This queries `https://federations.ochk.io/api/v1/seats-open` (a public read-only endpoint, no auth required). The portal queries the same endpoint and renders it as cards.
-
-Or query directly without the kit:
-
-```sh
-curl -s https://federations.ochk.io/api/v1/seats-open | jq
-```
+This reads the public federation directory at `me.ochk.io/api/federations` (no auth), the same one the portal renders. Set `OC_PORTAL_BASE` to read another deployment.
 
 ---
 
 ## §04 — Join a federation
 
-**Portal path:** Portal "join" button → in-portal WebAuthn-signed opt-in → federation organizer notified.
+**Portal path:** the portal's seat and charter flow.
 
-**Bypass:**
-
-```sh
-oc-guardian federations join <federation-slug>
-```
-
-This produces a signed join-request envelope and POSTs it to the federation's published coordinator URL (e.g. `https://federation-foo.example/oc-coordinator/join`). The federation organizer accepts (or rejects) and replies with a signed acceptance envelope.
-
-If the federation prefers email coordination:
-
-```sh
-oc-guardian federations join <federation-slug> --transport email
-```
-
-Generates the same signed envelope and exits with instructions on what to email and where.
+**Bypass:** joining is two things, not one envelope: an orangecheck admin assigns you a guardian seat once your application is accepted, and you ratify the federation's charter ([§06](#06-sign-the-federation-charter)), which is your join. `oc-guardian federations join <slug>` prints those steps.
 
 ---
 
 ## §05 — Run the DKG ceremony
 
-**Portal path:** Portal hosts a real-time ceremony coordinator that pipes messages between participating guardians' kits.
+**Portal path:** for seats orangecheck hosts, the portal calls each guardian's setup API in turn.
 
-**Bypass:**
+**Bypass:** on a guardian you run, the kit makes the same four calls to fedimintd 0.11's setup API on that machine. The password comes from `--password-file` or `FM_PASSWORD` and never crosses the network.
 
 ```sh
-# Each guardian runs:
-oc-guardian ceremony start \
-    --peers https://guard-1.example.com,https://guard-2.example.com,https://guard-3.example.com \
-    --setup-code <code-from-federation-organizer>
+# Each guardian: name and password. The leader also names the federation and its size.
+oc-guardian ceremony start --name g0 --leader --federation-name my-fed --federation-size 4
+oc-guardian ceremony start --name g1
+#   → prints this guardian's setup code; send it to every other guardian
+
+oc-guardian ceremony add-peer --code <code> --code <code> --code <code>
+oc-guardian ceremony dkg
+oc-guardian ceremony status      # until RUNNING, as fedimintd itself reports it
+oc-guardian ceremony finalize    # prints the invite code
 ```
 
-The ceremony is direct authenticated HTTPS between guardian processes. Each `oc-guardian` exposes a temporary listener on `:8174` (configurable) during the ceremony. The cryptographic protocol is identical regardless of how messages arrive — portal-mediated WebSocket relay is a transport optimization, not a different ceremony.
-
-Ceremony progress is logged locally in `~/.local/share/oc-guardian/ceremony-<id>.log`.
+DKG runs guardian to guardian over the P2P port. **Run `ceremony start` as soon as the guardian boots**: until local params are set, whoever reaches the setup API first sets the password and takes the seat. Progress is kept in `<FM_DATA_DIR>/oc-ceremony.json`.
 
 ---
 
 ## §06 — Sign the federation charter
 
-**Portal path:** Portal renders the charter, computes its SHA-256, requests WebAuthn signature, broadcasts the signed acceptance.
+**Portal path:** the portal renders the charter, computes its hash and asks your key to sign.
 
 **Bypass:**
 
 ```sh
-# Fetch the charter (or use a local copy).
-oc-guardian charter fetch <federation-slug> > charter.md
+# Review what you would commit to: hash, version, canonical URL, ratifications.
+oc-guardian charter fetch <federation-slug>
 
-# Sign it with your hardware key.
-oc-guardian charter sign --file charter.md --hsm yubikey > charter-signature.json
+# Sign it with your operator key.
+oc-guardian charter sign <federation-slug> --out charter-sig.json
 
-# Publish your signature. Default transport is HTTPS POST to the
-# federation's coordinator. Bypass: publish as a Nostr event signed
-# by your operator key, OR email it to the federation organizer.
-oc-guardian charter publish --file charter-signature.json
-oc-guardian charter publish --file charter-signature.json --transport nostr
-oc-guardian charter publish --file charter-signature.json --transport email
+# Publish your signature to the portal's /api/operator/charter (HTTPS only).
+oc-guardian charter publish --file charter-sig.json
 ```
 
-The charter signature is just an Ed25519 signature over the SHA-256 of the canonicalized charter document. The signature is the same byte sequence regardless of transport.
+The charter signature is an Ed25519 signature over the canonical charter; it is the same bytes however it travels.
 
 ---
 
 ## §07 — Run the guardian
 
-**Portal path:** Portal shows tutorial pages with one-click "copy install command."
+**Portal path:** the portal shows install + run instructions.
 
-**Bypass:** Read this README. The kit is the install command.
+**Bypass:** install the kit (README §Install), then:
 
 ```sh
-# Verify your release (see README §Install).
-# Then:
-oc-guardian fedimintd run --config /etc/oc-guardian/config.toml
-
-# Or as a systemd service (Ansible playbook bundled):
-sudo cp ansible/debian-systemd/oc-guardian.service /etc/systemd/system/
-sudo systemctl enable --now oc-guardian
+oc-guardian fedimintd install --version 0.11.4 --dir /usr/local/bin   # pinned, hash-checked
+oc-guardian fedimintd run --config /usr/local/bin/fedimintd           # --config is the fedimintd binary
 ```
+
+Settings come from the environment (README §Running fedimintd): who you are, the network (required, no default), the chain source, your public host, and any fedimintd binds of your own, which the kit passes through unchanged. Run it under your own service manager; the kit ships no unit file.
 
 ---
 
 ## §08 — Operational status
 
-**Portal path:** Portal dashboard polls each operator's signed `/status` endpoint and renders.
+**Portal path:** the portal dashboard.
 
 **Bypass:**
 
 ```sh
-# Read your own guardian's status locally:
-oc-guardian status
-
-# Or read another guardian's published status (their kit signs the
-# response with their operator key, so you can verify it without
-# trusting the portal as a middleman):
-curl -s https://your-guardian.example/.well-known/oc-guardian-status.json | \
-    oc-guardian verify-status
+oc-guardian status              # your local identity, key store and bridge setting
+oc-guardian fedimintd status    # whether fedimintd answers, and its setup phase
+oc-guardian verify-status       # whether your key is in the public operator registry
 ```
-
-The `/status` JSON is signed by the operator's key with a freshness timestamp. The portal mirror is a UI; the signed JSON is the truth.
 
 ---
 
 ## §09 — Receive incident alerts
 
-**Portal path:** Portal alerts feed.
+**Portal path:** the portal alerts feed.
 
-**Bypass:** subscribe to the federation's Nostr alerts channel. Each federation publishes its alerts pubkey in its charter. Use any Nostr client; OC's kit also has:
-
-```sh
-oc-guardian alerts subscribe <federation-slug>
-```
-
-Which prints alerts to stderr as they arrive. Filter via `--severity ge warning`, `--since 24h`, etc.
+**Bypass:** published incidents are at `ochk.app/me/operator/incidents` and on the public federation timeline. The kit has no alert feed of its own yet; `oc-guardian alerts subscribe <slug>` says where to look.
 
 ---
 
 ## §10 — Post an incident update
 
-**Portal path:** Portal "post update" UI, WebAuthn-signed, broadcast.
+**Portal path:** the portal's "post update", signed by your key.
 
 **Bypass:**
 
 ```sh
 oc-guardian alerts post \
-    --severity warning \
     --federation <slug> \
-    --body "guardian-3 unreachable since 2026-05-04 09:14 UTC; investigating"
+    --severity warning \
+    --body "guardian-3 unreachable since 09:14 UTC; investigating"
 ```
 
-Signs locally, publishes as a Nostr event under the federation's alerts channel.
+Writes `incident.json`, a signed envelope in the shape the portal takes at `/api/operator/incidents`.
 
 ---
 
 ## §11 — Track payouts
 
-**Portal path:** Portal "accrued payouts" view + claim button.
+**Portal path:** the portal's accrued payouts and claim button.
 
 **Bypass:**
 
 ```sh
-oc-guardian payouts list <federation-slug>
-oc-guardian payouts claim <federation-slug> --to <bitcoin-address>
+oc-guardian payouts claim <federation-slug> --to you@wallet.example [--amount <sats>]
 ```
 
-Queries the federation's payout ledger directly. Claim is a signed envelope POSTed to the federation's payout endpoint (or emailed, per the operator's preference).
+Writes a claim envelope signed with your operator key. Accrued figures are only shown signed in on the portal; `oc-guardian payouts list` says so.
 
 ---
 
 ## §12 — Graceful exit
 
-**Portal path:** Portal "exit federation" coordination flow.
+**Portal path:** the portal's exit flow.
 
 **Bypass:**
 
@@ -274,28 +235,21 @@ oc-guardian exit-handoff \
     --effective-date 2026-06-15
 ```
 
-Produces a signed handoff envelope. Distribute to the federation organizer + remaining guardians via the federation's existing coordination channel (email, Signal, Nostr — whatever the federation uses). The replacement guardian's onboarding follows the standard ceremony flow with the existing guardians as peers.
+Produces a signed handoff envelope. The other guardians countersign it with `oc-guardian exit-ratify`.
 
 ---
 
 ## §13 — Deauthenticate from portal
 
-**Portal path:** Portal "delete account" button.
+**Portal path:** the portal's "delete account" button.
 
 **Bypass:**
 
 ```sh
-# 1. If you'd been bridging the portal:
-oc-guardian bridge disable
-
-# 2. Optionally tell the portal to forget you (revokes its mirror of
-#    your relationships; your guardian's federation memberships are
-#    unaffected — federations track you by your operator pubkey, not
-#    by your portal account):
 oc-guardian portal forget
 ```
 
-Or: never run those commands. Your guardian is unaffected by the portal's existence. There is no kill-switch the portal can pull on you — it never had push capability over your guardian to begin with.
+This removes the kit's local operator state (the config dir and the keychain entry) on this machine. It sends nothing to the portal. Your guardian keeps running, and federations know you by your operator key, not a portal account. The portal bridge (`oc-guardian bridge …`) is not built yet, so there is nothing to disable.
 
 ---
 

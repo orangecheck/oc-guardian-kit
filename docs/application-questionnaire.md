@@ -7,7 +7,7 @@ Submit this questionnaire by emailing it to `apply@ochk.io`. No portal intake pa
 Fill out every section. Sign the resulting JSON envelope with your operator key:
 
 ```sh
-oc-guardian apply prepare --out application.json --questionnaire ./this-file.md --hsm yubikey
+oc-guardian apply prepare --out application.json --questionnaire ./this-file.md
 ```
 
 Then either submit via the portal or attach the signed envelope to an email to `apply@ochk.io`.
