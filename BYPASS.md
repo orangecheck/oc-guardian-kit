@@ -165,7 +165,7 @@ oc-guardian fedimintd install --version 0.11.4 --dir /usr/local/bin   # pinned, 
 oc-guardian fedimintd run --config /usr/local/bin/fedimintd           # --config is the fedimintd binary
 ```
 
-Settings come from the environment (README §Running fedimintd): who you are, the network (required, no default), the chain source, your public host, and any fedimintd binds of your own, which the kit passes through unchanged. Run it under your own service manager; the kit ships no unit file.
+Settings come from the environment (README §Running fedimintd): who you are, the network (required, no default), the chain source, your public host, and any fedimintd binds of your own, which the kit passes through unchanged. Until DKG is done it will not start with its setup reachable from other machines: use the setup gate (`OC_GUARDIAN_SETUP_PASSWORD`), bind the API to loopback, or pass `--allow-public-setup` and run `ceremony start` at once. Run it under your own service manager; the kit ships no unit file.
 
 ---
 

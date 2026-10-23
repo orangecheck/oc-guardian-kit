@@ -19,7 +19,9 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
+
+use crate::ceremony::LocalParams;
 
 /// Default ports — must match the Fly service ports in
 /// oc-me-web/src/lib/hosting/fly.ts (9000 P2P, 9001 API).
@@ -91,6 +93,10 @@ pub struct FedimintdRuntime {
     /// fedimintd's API on loopback and answers the public API bind itself,
     /// passing on only calls that carry this password (see `gate`).
     pub setup_password: Option<SetupPassword>,
+    /// `OC_GUARDIAN_NAME` (+ `OC_FEDERATION_NAME` and `OC_FEDERATION_SIZE`
+    /// on the leader): local params the kit sets itself behind the setup
+    /// gate, at boot and after every restart before DKG.
+    pub local_params: Option<LocalParams>,
 }
 
 /// A guardian setup password: `Debug` shows only that one is set.
@@ -222,6 +228,7 @@ impl FedimintdRuntime {
             attestation_post_url: get("OC_ATTESTATION_POST_URL").filter(|v| !v.is_empty()),
             attest_key: nonempty("OC_ATTEST_KEY_HEX").map(AttestKey),
             setup_password: nonempty("OC_GUARDIAN_SETUP_PASSWORD").map(SetupPassword),
+            local_params: local_params(&nonempty)?,
         })
     }
 
@@ -293,6 +300,34 @@ impl FedimintdRuntime {
         };
         format!("http://{host}:{port}")
     }
+}
+
+fn local_params(nonempty: &impl Fn(&str) -> Option<String>) -> Result<Option<LocalParams>> {
+    let name = nonempty("OC_GUARDIAN_NAME");
+    let fed_name = nonempty("OC_FEDERATION_NAME");
+    let fed_size = nonempty("OC_FEDERATION_SIZE")
+        .map(|v| {
+            v.parse::<u32>()
+                .map_err(|_| anyhow!("OC_FEDERATION_SIZE={v} is not a whole number"))
+        })
+        .transpose()?;
+    let Some(name) = name else {
+        if fed_name.is_some() || fed_size.is_some() {
+            return Err(anyhow!(
+                "OC_FEDERATION_NAME and OC_FEDERATION_SIZE need OC_GUARDIAN_NAME"
+            ));
+        }
+        return Ok(None);
+    };
+    if nonempty("OC_GUARDIAN_SETUP_PASSWORD").is_none() {
+        return Err(anyhow!(
+            "OC_GUARDIAN_NAME is set but OC_GUARDIAN_SETUP_PASSWORD is not · the kit sets local params only behind the setup gate"
+        ));
+    }
+    let leader = fed_name.is_some() || fed_size.is_some();
+    LocalParams::new(name, leader, fed_name, fed_size)
+        .map(Some)
+        .context("OC_FEDERATION_NAME and OC_FEDERATION_SIZE go together, on the leader only")
 }
 
 /// `host:port` or `[v6]:port` → (host, port). The host keeps its brackets.
@@ -446,6 +481,34 @@ mod tests {
         let r = rt(&m);
         assert_eq!(r.setup_password, Some(SetupPassword("s3cret-pw".into())));
         assert!(!format!("{r:?}").contains("s3cret-pw"));
+    }
+
+    #[test]
+    fn local_params_come_with_the_password_and_the_leader_names_both() {
+        assert!(rt(&base()).local_params.is_none());
+        let mut m = base();
+        m.insert("OC_GUARDIAN_NAME".into(), "guardian-1".into());
+        let err = FedimintdRuntime::from_vars(|k| m.get(k).cloned())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("OC_GUARDIAN_SETUP_PASSWORD"), "got: {err}");
+        m.insert("OC_GUARDIAN_SETUP_PASSWORD".into(), "pw".into());
+        let p = rt(&m).local_params.unwrap();
+        assert_eq!(
+            (p.name.as_str(), p.federation.clone()),
+            ("guardian-1", None)
+        );
+        m.insert("OC_FEDERATION_NAME".into(), "fed".into());
+        assert!(FedimintdRuntime::from_vars(|k| m.get(k).cloned()).is_err());
+        m.insert("OC_FEDERATION_SIZE".into(), "four".into());
+        assert!(FedimintdRuntime::from_vars(|k| m.get(k).cloned()).is_err());
+        m.insert("OC_FEDERATION_SIZE".into(), "4".into());
+        assert_eq!(
+            rt(&m).local_params.unwrap().federation,
+            Some(("fed".into(), 4))
+        );
+        m.remove("OC_GUARDIAN_NAME");
+        assert!(FedimintdRuntime::from_vars(|k| m.get(k).cloned()).is_err());
     }
 
     #[test]

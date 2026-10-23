@@ -46,8 +46,8 @@ sudo install target/release/oc-guardian /usr/local/bin/
 ```sh
 # 1. Your operator identity (Ed25519). The private key goes in your OS keychain.
 oc-guardian init
-#    On a server with no OS keychain, keep it in a file instead. The file is
-#    the key: anyone who can read it can sign as you.
+#    On a server with no OS keychain (init fails with a DBus error), keep it in
+#    a file instead. The file is the key: anyone who can read it can sign as you.
 oc-guardian init --key-file /var/lib/oc-guardian/operator.key
 
 # 2. Apply. Email apply@ochk.io the signed envelope this writes.
@@ -80,17 +80,22 @@ Settings come from the environment:
 | `OC_P2P_PORT`, `OC_API_PORT`, `OC_UI_PORT` | no | 9000, 9001, 8175 |
 | `FM_BIND_P2P`, `FM_BIND_API`, `FM_BIND_UI`, `FM_P2P_URL`, `FM_API_URL`, `FM_DATA_DIR` | no | fedimintd's own settings. Set them and the kit passes them through unchanged. |
 | `OC_GUARDIAN_SETUP_PASSWORD` | no | turns on the setup gate (below) until DKG is done |
+| `OC_GUARDIAN_NAME`, and on the leader `OC_FEDERATION_NAME` + `OC_FEDERATION_SIZE` | no | with the setup password: the kit sets this guardian's local params itself |
 
 Without your own binds, P2P and the API listen on all interfaces (peers and clients need them), and the **setup UI listens on 127.0.0.1 only**. The API URL is `ws://` for a loopback host and `wss://` otherwise (behind TLS); set `FM_API_URL` for anything else.
 
-**Until DKG has run, whoever reaches the setup API first sets the guardian's password.** fedimintd serves its setup API on the API port and needs no password until local params are set, so the first caller claims the guardian. It also forgets local params, and gets a new setup code, every time it restarts, so a restart before DKG reopens the window. Close it one of two ways:
+**Until DKG has run, whoever reaches the setup API first sets the guardian's password.** fedimintd serves its setup API on the API port and needs no password until local params are set, so the first caller claims the guardian. It also forgets local params, and comes back with a new setup code, every time it restarts. So `fedimintd run` will not start a guardian that has not finished DKG while its setup API or UI can be reached from other machines. Choose one of:
 
-- **Set `OC_GUARDIAN_SETUP_PASSWORD`.** Until DKG writes the consensus config, the kit keeps fedimintd's API on loopback and answers the public API port itself. It passes on `setup_status` and `invite_code` to anyone, and every other call only if it carries that password. Once DKG is done it hands the port back to fedimintd. Use the same password for the ceremony (`FM_PASSWORD` or `--password-file`).
-- **Or bind the API to loopback** (`FM_BIND_API=127.0.0.1:9001`) until DKG is done, then restart with the public bind. DKG runs over P2P; peers never call each other's API during it.
-
-Without either, the kit warns at start-up while the API is reachable from other machines. `oc-guardian ceremony start` right after boot narrows the window, until the next restart.
+- **The setup gate: set `OC_GUARDIAN_SETUP_PASSWORD`.** Until DKG writes the consensus config, the kit keeps fedimintd's API on loopback and answers the public API port itself. It passes on `setup_status` and `invite_code` to anyone, and every other call only if it carries that password; it refuses JSON-RPC batches. Once DKG is done it hands the port back to fedimintd. Use the same password for the ceremony (`FM_PASSWORD` or `--password-file`).
+  - **With `OC_GUARDIAN_NAME` as well** (and, on the leader, `OC_FEDERATION_NAME` and `OC_FEDERATION_SIZE`), the kit sets local params itself, at boot and again after every restart. Until it has, the public port answers every call with "this guardian is starting" (JSON-RPC error -32003), so it never offers unset params. Read the setup code with `oc-guardian ceremony status`, or `get_setup_code` with the password. After a restart the code is new, so send it to the other guardians again.
+- **Bind the API and UI to loopback** (`FM_BIND_API=127.0.0.1:9001`) until DKG is done, then restart with the public bind. DKG runs over P2P; peers never call each other's API during it.
+- **`--allow-public-setup`** starts it anyway, with a warning. Run `oc-guardian ceremony start` at once; a restart before DKG reopens the window.
 
 **On Fly**, the setup UI isn't one of the app's public services. To reach it over the org's private network with `fly proxy 8175:8175 -a <app>`, bind it to the machine's private IPv6 address (the one `fly-local-6pn` names in `/etc/hosts`): `FM_BIND_UI=[<that address>]:8175`. Every machine in the org can reach that address, not just yours.
+
+**More than one guardian on a host:** fedimintd's metrics listen on 127.0.0.1:8176 by default, so give each guardian its own `FM_BIND_METRICS`.
+
+**Where fedimintd runs:** the upstream `fedimintd` release the kit pins is a nix bundle. On hosts that restrict unprivileged user namespaces (Ubuntu 23.10 and later by default) it fails with "Cannot bind mount /dev … Permission denied". The guardian image installs upstream's `.deb` instead. On such a host, unpack the bundle (`fedimintd --extract`) and point `--config` at a wrapper that runs the unpacked binary.
 
 ## The DKG ceremony
 
@@ -134,6 +139,15 @@ Every lifecycle stage of the program (application → exit) has a kit command. S
 | Payouts | `oc-guardian payouts claim <slug> --to <lightning-address>` |
 | Exit | `oc-guardian exit-handoff`, `oc-guardian exit-ratify` |
 | Hosted attestations | `oc-guardian attest-delegate` |
+
+## What needs the portal
+
+Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify-status`, `federations list` and `charter {fetch, sign, publish}`. `alerts post`, `payouts claim`, `exit-handoff`, `exit-ratify` and `attest-delegate` sign locally and write an envelope for you to submit; `exit-ratify` and `attest-delegate` need a recent bitcoin mainnet block (height and hash, within 6 of the tip). Everything else is local.
+
+## Two fedimint behaviours to know
+
+- After DKG, fedimintd publishes its API address to public pkarr relays unless `FM_PKARR_ENABLE=false`.
+- The fedimint 0.11.4 client watches for deposits through Esplora only.
 
 ## What is not built yet
 

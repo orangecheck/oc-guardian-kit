@@ -6,6 +6,28 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
+## 0.2.7
+
+### Added
+
+- **The kit sets local params itself behind the setup gate.** With
+  `OC_GUARDIAN_SETUP_PASSWORD` and `OC_GUARDIAN_NAME` (plus
+  `OC_FEDERATION_NAME` and `OC_FEDERATION_SIZE` on the leader), it sets this
+  guardian's local params over loopback at boot and again after every
+  fedimintd restart before DKG. Until it has, the public API port answers
+  "this guardian is starting" (JSON-RPC -32003) and passes nothing on.
+- **`fedimintd run --allow-public-setup`.**
+- `ceremony status` shows this guardian's setup code.
+
+### Changed
+
+- **`fedimintd run` refuses to start a guardian that has not finished DKG
+  while its setup API or UI is reachable from other machines**, unless the
+  setup gate is on or `--allow-public-setup` is given.
+- README: the metrics port on a shared host, the hosts the pinned fedimintd
+  bundle runs on, which commands call the portal, and two fedimint
+  behaviours (pkarr publication after DKG, Esplora-only deposit watching).
+
 ## 0.2.6
 
 ### Added

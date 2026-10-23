@@ -9,10 +9,11 @@ use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use tracing::{error, info, warn};
 
 use crate::attest;
+use crate::ceremony::ensure_local_params;
 use crate::config::{is_loopback_bind, FedimintdRuntime, SetupPassword};
 use crate::gate;
 use crate::status;
@@ -88,7 +89,7 @@ pub fn probe_version(bin: &PathBuf) -> String {
 /// Entrypoint: supervise fedimintd forever. `bin_hint` is the optional
 /// `--config` value from the CLI (treated as a fedimintd binary path
 /// override; empty → resolve from PATH).
-pub fn run(bin_hint: String) -> Result<()> {
+pub fn run(bin_hint: String, allow_public_setup: bool) -> Result<()> {
     let rt = FedimintdRuntime::from_env().context("resolving fedimintd runtime from env")?;
     std::fs::create_dir_all(&rt.data_dir)
         .with_context(|| format!("creating data dir {}", rt.data_dir.display()))?;
@@ -112,10 +113,20 @@ pub fn run(bin_hint: String) -> Result<()> {
 
     let open = setup_exposure(&rt);
     if !open.is_empty() {
+        if !allow_public_setup {
+            bail!(
+                "this guardian is not set up yet, and {} would be reachable from other machines, \
+                 where the first caller to set local params sets its password. Set \
+                 OC_GUARDIAN_SETUP_PASSWORD (the setup gate), or bind the API and UI to 127.0.0.1 \
+                 until DKG is done, or pass --allow-public-setup and run `oc-guardian ceremony \
+                 start` straight away",
+                open.join(" and ")
+            );
+        }
         warn!(
-            "this guardian is not set up yet, and {} can be reached from other machines. \
-             The first caller to set local params sets the guardian's password: set them now, \
-             with `oc-guardian ceremony start` on this machine",
+            "--allow-public-setup · this guardian is not set up yet, and {} can be reached from \
+             other machines. The first caller to set local params sets the guardian's password: \
+             set them now, with `oc-guardian ceremony start` on this machine",
             open.join(" and ")
         );
     }
@@ -152,7 +163,15 @@ fn setup_behind_gate(rt: &FedimintdRuntime, bin: &PathBuf, pw: &SetupPassword) -
     let mut local = rt.clone();
     local.bind_api = format!("127.0.0.1:{}", gate::free_loopback_port()?);
     local.bind_ui = format!("127.0.0.1:{}", rt.ui_port);
-    let gate = gate::start(&rt.bind_api, local.local_api_base(), pw.0.clone())?;
+    let internal = local.local_api_base();
+    // With OC_GUARDIAN_NAME the kit sets local params itself, and the gate
+    // answers "starting" until it has.
+    let gate = gate::start(
+        &rt.bind_api,
+        internal.clone(),
+        pw.0.clone(),
+        rt.local_params.is_none(),
+    )?;
     info!(
         public = %rt.bind_api,
         internal = %local.bind_api,
@@ -161,6 +180,7 @@ fn setup_behind_gate(rt: &FedimintdRuntime, bin: &PathBuf, pw: &SetupPassword) -
     );
     let mut child: Option<Child> = None;
     let mut backoff = BACKOFF_MIN;
+    let mut params_set = false;
     while !rt.is_set_up() {
         let exited = match child.as_mut() {
             None => true,
@@ -168,9 +188,13 @@ fn setup_behind_gate(rt: &FedimintdRuntime, bin: &PathBuf, pw: &SetupPassword) -
         };
         if exited {
             if child.is_some() {
-                warn!("fedimintd exited during setup · it forgets its local params and setup code; set them again (the gate still asks for the setup password)");
+                warn!("fedimintd exited during setup · it forgets its local params and comes back with a new setup code (the gate still asks for the setup password)");
                 std::thread::sleep(backoff);
                 backoff = (backoff * 2).min(BACKOFF_MAX);
+            }
+            if rt.local_params.is_some() {
+                gate.set_ready(false);
+                params_set = false;
             }
             child = match spawn_once(&local, bin) {
                 Ok(c) => Some(c),
@@ -179,6 +203,25 @@ fn setup_behind_gate(rt: &FedimintdRuntime, bin: &PathBuf, pw: &SetupPassword) -
                     None
                 }
             };
+        }
+        if let (Some(params), false) = (rt.local_params.as_ref(), params_set) {
+            match ensure_local_params(&internal, &rt.data_dir, &rt.federation_slug, params, &pw.0) {
+                Ok(fresh) => {
+                    params_set = true;
+                    gate.set_ready(true);
+                    if fresh {
+                        info!(name = %params.name, "local params set · this seat has a new setup code; the gate is open to the setup password");
+                    } else {
+                        info!("local params are this seat's own · the gate is open to the setup password");
+                    }
+                }
+                Err(e) if e.to_string().contains("did not answer") => {}
+                Err(e) => {
+                    error!(error = %e, "local params could not be set · the gate stays closed")
+                }
+            }
+            std::thread::sleep(Duration::from_millis(250));
+            continue;
         }
         std::thread::sleep(Duration::from_secs(2));
     }

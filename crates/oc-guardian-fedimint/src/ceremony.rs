@@ -169,6 +169,32 @@ pub fn start_at(
     Ok(state)
 }
 
+/// Make sure this guardian's local params are the ones given, set with
+/// `password`: set them if they are unset (fedimintd forgets them on every
+/// restart), accept them if `password` opens them. Returns true when this
+/// call set them, which also means a new setup code. Params set with
+/// another password are an error.
+pub fn ensure_local_params(
+    base: &str,
+    data_dir: &Path,
+    slug: &str,
+    params: &LocalParams,
+    password: &str,
+) -> Result<bool> {
+    match status::phase_at(base)? {
+        Phase::AwaitingLocalParams => {
+            start_at(base, data_dir, slug, params, password)?;
+            Ok(true)
+        }
+        Phase::Setup(_) => match status::rpc(base, "get_setup_code", Value::Null, Some(password)) {
+            Ok(_) => Ok(false),
+            Err(e) => bail!("this guardian's local params were set with another password ({e})"),
+        },
+        Phase::ConsensusRunning => Ok(false),
+        Phase::Unreachable => bail!("fedimintd's setup API did not answer on {base}"),
+    }
+}
+
 /// `add-peer` against an API base: add each code, record the peer names.
 pub fn add_peers_at(
     base: &str,
@@ -291,6 +317,9 @@ pub fn status() -> Result<()> {
                 s.name,
                 if s.leader { " (leader)" } else { "" }
             );
+            if !s.setup_code.is_empty() {
+                println!("    setup code     {}", s.setup_code);
+            }
             println!("    peers added    {}", s.peers.len());
             println!(
                 "    dkg started    {}",
@@ -438,6 +467,49 @@ mod tests {
         assert_eq!(st.invite_code.as_deref(), Some("fed11invite"));
         assert!(st.finalized_at_unix.is_some());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn ensure_sets_unset_params_and_records_the_new_code() {
+        let s = serve(Box::new(|_, m, _| match m {
+            "setup_status" => result(json!("AwaitingLocalParams")),
+            "set_local_params" => result(json!("fresh-code")),
+            _ => error("unexpected"),
+        }));
+        let dir = temp_dir("ensure-set");
+        let p = LocalParams::new("guardian-1".into(), true, Some("fed".into()), Some(4)).unwrap();
+        assert!(ensure_local_params(&s.base, &dir, "fed", &p, "pw").unwrap());
+        let st = read_state(&dir).unwrap().unwrap();
+        assert_eq!(st.setup_code, "fresh-code");
+        assert!(st.leader);
+        let calls = s.calls.lock().unwrap();
+        assert_eq!(
+            calls[1].1,
+            json!({"params":{"name":"guardian-1","federation_name":"fed","federation_size":4},"auth":"pw"})
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn ensure_accepts_params_its_password_opens_and_refuses_others() {
+        let s = serve(Box::new(|_, m, j| match m {
+            "setup_status" => result(json!("SharingConnectionCodes")),
+            "get_setup_code" if j["params"][0]["auth"] == json!("pw") => result(json!("code")),
+            _ => error("Invalid authorization"),
+        }));
+        let dir = temp_dir("ensure-ours");
+        let p = LocalParams::new("guardian-2".into(), false, None, None).unwrap();
+        assert!(!ensure_local_params(&s.base, &dir, "fed", &p, "pw").unwrap());
+        let err = ensure_local_params(&s.base, &dir, "fed", &p, "other")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("another password"), "got: {err}");
+        assert!(!s
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| c.0 == "set_local_params"));
     }
 
     #[test]

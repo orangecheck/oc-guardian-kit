@@ -52,11 +52,18 @@ fn same(a: &[u8], b: &[u8]) -> bool {
 /// A running gate. Dropping it does not stop it; call [`Gate::stop`].
 pub struct Gate {
     stop: Arc<AtomicBool>,
+    ready: Arc<AtomicBool>,
     handle: JoinHandle<()>,
     pub addr: std::net::SocketAddr,
 }
 
 impl Gate {
+    /// While not ready, every call gets "this guardian is starting" and
+    /// nothing reaches fedimintd: the kit is still setting local params.
+    pub fn set_ready(&self, ready: bool) {
+        self.ready.store(ready, Ordering::SeqCst);
+    }
+
     pub fn stop(self) {
         self.stop.store(true, Ordering::SeqCst);
         let _ = self.handle.join();
@@ -64,7 +71,8 @@ impl Gate {
 }
 
 /// Listen on `bind` and forward what passes to `upstream` (an http:// base).
-pub fn start(bind: &str, upstream: String, password: String) -> Result<Gate> {
+/// The gate starts ready unless `ready` is false.
+pub fn start(bind: &str, upstream: String, password: String, ready: bool) -> Result<Gate> {
     let listener =
         TcpListener::bind(bind).with_context(|| format!("binding the setup gate on {bind}"))?;
     listener
@@ -74,14 +82,16 @@ pub fn start(bind: &str, upstream: String, password: String) -> Result<Gate> {
         .local_addr()
         .context("reading the gate's address")?;
     let stop = Arc::new(AtomicBool::new(false));
-    let flag = stop.clone();
+    let ready = Arc::new(AtomicBool::new(ready));
+    let (flag, is_ready) = (stop.clone(), ready.clone());
     let handle = std::thread::spawn(move || {
         while !flag.load(Ordering::SeqCst) {
             match listener.accept() {
                 Ok((stream, _)) => {
                     let (up, pw) = (upstream.clone(), password.clone());
+                    let open = is_ready.load(Ordering::SeqCst);
                     std::thread::spawn(move || {
-                        if let Err(e) = serve(stream, &up, &pw) {
+                        if let Err(e) = serve(stream, &up, &pw, open) {
                             warn!(error = %e, "setup gate · dropped a request");
                         }
                     });
@@ -96,10 +106,15 @@ pub fn start(bind: &str, upstream: String, password: String) -> Result<Gate> {
             }
         }
     });
-    Ok(Gate { stop, handle, addr })
+    Ok(Gate {
+        stop,
+        ready,
+        handle,
+        addr,
+    })
 }
 
-fn serve(mut stream: TcpStream, upstream: &str, password: &str) -> Result<()> {
+fn serve(mut stream: TcpStream, upstream: &str, password: &str, ready: bool) -> Result<()> {
     stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(Duration::from_secs(10)))?;
     let mut reader = BufReader::new(stream.try_clone()?);
@@ -132,6 +147,11 @@ fn serve(mut stream: TcpStream, upstream: &str, password: &str) -> Result<()> {
             json!({"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"parse error"}});
         return respond(&mut stream, 400, &err.to_string());
     };
+    if !ready {
+        let id = request.get("id").cloned().unwrap_or(Value::Null);
+        let err = json!({"jsonrpc":"2.0","id":id,"error":{"code":-32003,"message":"this guardian is starting"}});
+        return respond(&mut stream, 200, &err.to_string());
+    }
     if let Err(why) = decide(&request, password) {
         let id = request.get("id").cloned().unwrap_or(Value::Null);
         let err = json!({"jsonrpc":"2.0","id":id,"error":{"code":-32001,"message":why}});
@@ -240,7 +260,7 @@ mod tests {
             "set_local_params" => result(json!("code")),
             _ => error("unexpected"),
         }));
-        let gate = start("127.0.0.1:0", up.base.clone(), "pw".into()).unwrap();
+        let gate = start("127.0.0.1:0", up.base.clone(), "pw".into(), true).unwrap();
 
         let (_, r) = post(gate.addr, &req("setup_status", None));
         assert_eq!(r["result"], json!("AwaitingLocalParams"));
@@ -270,6 +290,24 @@ mod tests {
             other => panic!("{other:?}"),
         };
         assert_eq!(status, 405);
+        gate.stop();
+    }
+
+    #[test]
+    fn a_gate_that_is_not_ready_answers_starting_and_forwards_nothing() {
+        let up = stub(Box::new(|_, _, _| result(json!("AwaitingLocalParams"))));
+        let gate = start("127.0.0.1:0", up.base.clone(), "pw".into(), false).unwrap();
+        for r in [
+            req("setup_status", None),
+            req("set_local_params", Some("pw")),
+        ] {
+            let (_, body) = post(gate.addr, &r);
+            assert_eq!(body["error"]["code"], json!(-32003));
+        }
+        assert!(up.calls.lock().unwrap().is_empty());
+        gate.set_ready(true);
+        let (_, body) = post(gate.addr, &req("setup_status", None));
+        assert_eq!(body["result"], json!("AwaitingLocalParams"));
         gate.stop();
     }
 }

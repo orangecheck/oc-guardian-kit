@@ -278,6 +278,11 @@ enum FedimintdCommand {
     Run {
         #[arg(long, default_value = "auto")]
         config: String,
+        /// Start an un-set-up guardian whose setup API or UI is reachable
+        /// from other machines without the setup gate. Whoever first sets
+        /// its local params sets its password: run `ceremony start` at once.
+        #[arg(long)]
+        allow_public_setup: bool,
     },
     /// Show wrapped fedimintd's status and setup phase.
     Status {
@@ -465,7 +470,10 @@ fn main() -> Result<()> {
             FedimintdCommand::Install { version, dir } => {
                 oc_guardian_fedimint::install(version, dir)
             }
-            FedimintdCommand::Run { config } => oc_guardian_fedimint::run(config),
+            FedimintdCommand::Run {
+                config,
+                allow_public_setup,
+            } => oc_guardian_fedimint::run(config, allow_public_setup),
             FedimintdCommand::Status { config } => oc_guardian_fedimint::status(config),
         },
         Command::Status => oc_guardian_core::commands::status(),

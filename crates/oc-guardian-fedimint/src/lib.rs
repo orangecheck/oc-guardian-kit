@@ -50,8 +50,8 @@ pub fn install(version: String, dir: Option<String>) -> Result<()> {
 
 /// CLI entrypoint · launch + supervise fedimintd (the guardian's main
 /// process). `config` is an optional fedimintd-binary path override.
-pub fn run(config: String) -> Result<()> {
-    run::run(config)
+pub fn run(config: String, allow_public_setup: bool) -> Result<()> {
+    run::run(config, allow_public_setup)
 }
 
 /// CLI entrypoint · print the wrapped daemon's status. `config` is the
