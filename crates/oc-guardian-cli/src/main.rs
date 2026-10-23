@@ -310,7 +310,8 @@ struct ExitRatifyArgs {
     federation: String,
     #[arg(long)]
     exit_id: String,
-    /// A recent block's height and hash, from any explorer.
+    /// A recent bitcoin mainnet block's height and hash (within 6 of the tip), even for a
+    /// federation on signet or testnet: the portal dates what you sign against mainnet.
     #[arg(long)]
     block_height: u64,
     #[arg(long)]
@@ -332,7 +333,8 @@ struct AttestDelegateArgs {
     /// How long it counts for.
     #[arg(long, default_value_t = 180)]
     days: u64,
-    /// A recent block's height and hash, from any explorer.
+    /// A recent bitcoin mainnet block's height and hash (within 6 of the tip), even for a
+    /// federation on signet or testnet: the portal dates what you sign against mainnet.
     #[arg(long)]
     block_height: u64,
     #[arg(long)]

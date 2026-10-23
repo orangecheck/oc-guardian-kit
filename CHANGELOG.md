@@ -6,6 +6,12 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
+## Unreleased
+
+- `attest-delegate` and `exit-ratify` help says the block is a recent bitcoin
+  mainnet block, within 6 of the tip, as the portal checks, even for a
+  federation on signet or testnet. It said "from any explorer".
+
 ## 0.2.5
 
 ### Added

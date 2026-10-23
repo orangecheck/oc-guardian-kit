@@ -308,13 +308,15 @@ A guardian on orangecheck-hosted hardware never holds your operator key, so it s
 **Bypass:**
 
 ```sh
-# The machine key is on the seat's hosted status. Take any recent block.
+# The machine key is on the seat's hosted status. Take a bitcoin mainnet block
+# within 6 of the tip, even for a signet or testnet federation: the portal
+# dates what you sign against mainnet.
 oc-guardian attest-delegate \
     --federation <slug> \
     --seat 0 \
     --attest-pubkey <64-hex machine key> \
     --days 180 \
-    --block-height <recent height> \
+    --block-height <recent mainnet height> \
     --block-hash <its hash>
 ```
 
