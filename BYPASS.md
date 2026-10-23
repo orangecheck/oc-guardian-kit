@@ -12,20 +12,20 @@ Every row here is a portal route the operator might land on, paired with the kit
 
 | # | Lifecycle stage | Portal path | Kit-only equivalent |
 |---|---|---|---|
-| 01 | Apply to the program | `ochk.app/me/operator/apply`: paste your answers, signed with the key in your browser | Email `apply@ochk.io` with the application questionnaire — see [§01 below](#01-apply-to-the-program) |
-| 02 | Get accepted + onboarded | Portal registers the key in your browser | `oc-guardian init` (OS keychain, or `--key-file` on a server) — see [§02](#02-get-accepted--onboarded) |
-| 03 | Discover federations seeking guardians | Portal lists federations with seats open | `oc-guardian federations list` (the same directory, read directly) — see [§03](#03-discover-federations-seeking-guardians) |
-| 04 | Join a federation | Portal mediates the seat and the charter | A seat assignment plus your charter ratification — see [§04](#04-join-a-federation) |
-| 05 | Run the DKG ceremony | Portal drives the setup API of the seats it hosts | `oc-guardian ceremony {start, add-peer, dkg, status, finalize}` on your own guardian — see [§05](#05-run-the-dkg-ceremony) |
-| 06 | Sign the federation charter | Portal renders the charter and asks your key to sign | `oc-guardian charter {fetch, sign, publish}` — see [§06](#06-sign-the-federation-charter) |
-| 07 | Run the guardian | Portal shows install + run instructions | `oc-guardian fedimintd run` — see [§07](#07-run-the-guardian) |
-| 08 | Operational status | Portal dashboard | `oc-guardian status`, `oc-guardian fedimintd status`, `oc-guardian verify-status` — see [§08](#08-operational-status) |
-| 09 | Receive incident alerts | Portal alerts feed | The portal's published incidents; the kit has no feed yet — see [§09](#09-receive-incident-alerts) |
-| 10 | Post an incident update | Portal "post update", signed by your key | `oc-guardian alerts post` writes a signed envelope — see [§10](#10-post-an-incident-update) |
-| 11 | Track payouts | Portal shows accrued payouts + claim button | `oc-guardian payouts claim <slug> --to <lightning-address>` signs a claim — see [§11](#11-track-payouts) |
-| 12 | Graceful exit | Portal coordinates handoff to replacement | `oc-guardian exit-handoff --federation <slug> --replacement <pubkey> --effective-date <date>` — see [§12](#12-graceful-exit) |
-| 13 | Deauthenticate from portal | Portal "delete account" button | `oc-guardian portal forget` clears local state; your guardian is unaffected — see [§13](#13-deauthenticate-from-portal) |
-| 14 | Let a hosted guardian attest | "Let this guardian attest" on the seat's hosted status | `oc-guardian attest-delegate --federation <slug> --seat <n> --attest-pubkey <hex> --block-height <h> --block-hash <hash>` — see [§14](#14-let-a-hosted-guardian-attest) |
+| 01 | Apply to the program | `ochk.app/me/operator/apply`: paste your answers, signed with the key in your browser | Email `apply@ochk.io` with the application questionnaire — see [§01 below](#01--apply-to-the-program) |
+| 02 | Get accepted + onboarded | Portal registers the key in your browser | `oc-guardian init` (OS keychain, or `--key-file` on a server) — see [§02](#02--get-accepted--onboarded) |
+| 03 | Discover federations seeking guardians | Portal lists federations with seats open | `oc-guardian federations list` (the same directory, read directly) — see [§03](#03--discover-federations-seeking-guardians) |
+| 04 | Join a federation | Portal mediates the seat and the charter | A seat assignment plus your charter ratification — see [§04](#04--join-a-federation) |
+| 05 | Run the DKG ceremony | Portal drives the setup API of the seats it hosts | `oc-guardian ceremony {start, add-peer, dkg, status, finalize}` on your own guardian — see [§05](#05--run-the-dkg-ceremony) |
+| 06 | Sign the federation charter | Portal renders the charter and asks your key to sign | `oc-guardian charter {fetch, sign, publish}` — see [§06](#06--sign-the-federation-charter) |
+| 07 | Run the guardian | Portal shows install + run instructions | `oc-guardian fedimintd run` — see [§07](#07--run-the-guardian) |
+| 08 | Operational status | Portal dashboard | `oc-guardian status`, `oc-guardian fedimintd status`, `oc-guardian verify-status` — see [§08](#08--operational-status) |
+| 09 | Receive incident alerts | Portal alerts feed | The portal's published incidents; the kit has no feed yet — see [§09](#09--receive-incident-alerts) |
+| 10 | Post an incident update | Portal "post update", signed by your key | `oc-guardian alerts post` writes a signed envelope — see [§10](#10--post-an-incident-update) |
+| 11 | Track payouts | Portal shows accrued payouts + claim button | `oc-guardian payouts claim <slug> --to <lightning-address>` signs a claim — see [§11](#11--track-payouts) |
+| 12 | Graceful exit | Portal coordinates handoff to replacement | `oc-guardian exit-handoff --federation <slug> --replacement <pubkey> --effective-date <date>` — see [§12](#12--graceful-exit) |
+| 13 | Deauthenticate from portal | Portal "delete account" button | `oc-guardian portal forget` clears local state; your guardian is unaffected — see [§13](#13--deauthenticate-from-portal) |
+| 14 | Let a hosted guardian attest | "Let this guardian attest" on the seat's hosted status | `oc-guardian attest-delegate --federation <slug> --seat <n> --attest-pubkey <hex> --block-height <h> --block-hash <hash>` — see [§14](#14--let-a-hosted-guardian-attest) |
 
 ---
 
@@ -107,7 +107,7 @@ This reads the public federation directory at `me.ochk.io/api/federations` (no a
 
 **Portal path:** the portal's seat and charter flow.
 
-**Bypass:** joining is two things, not one envelope: an orangecheck admin assigns you a guardian seat once your application is accepted, and you ratify the federation's charter ([§06](#06-sign-the-federation-charter)), which is your join. `oc-guardian federations join <slug>` prints those steps.
+**Bypass:** joining is two things, not one envelope: an orangecheck admin assigns you a guardian seat once your application is accepted, and you ratify the federation's charter ([§06](#06--sign-the-federation-charter)), which is your join. `oc-guardian federations join <slug>` prints those steps.
 
 ---
 
