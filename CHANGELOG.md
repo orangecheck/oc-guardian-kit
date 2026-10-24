@@ -14,7 +14,8 @@ surface (CLI flags, action-envelope schemas, file paths under
   `oc-guardian federation handover offer --federation <slug> --to <op-id>`
   signs the offer, which stands 7 days (`--valid-days`, 1 to 30). The
   operator it names signs `federation handover accept --federation <slug>
-  --offer <offer id>`. Each file names the ochk.app page that takes it.
+  --offer <offer id>`, with the offer id the offer prints. Each file names the
+  ochk.app page that takes it.
   `federations` also answers to `federation`.
 
 ## 0.2.9

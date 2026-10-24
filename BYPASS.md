@@ -298,7 +298,7 @@ The creator offers the federation to one operator key, and the operator holding 
 # The creator. The offer stands 7 days unless --valid-days says otherwise (1 to 30).
 oc-guardian federation handover offer --federation <slug> --to <their op-id>
 
-# The operator it names, with the offer's id from ochk.app/me/operator/handovers.
+# The operator it names, with the offer id the offer printed (also on ochk.app/me/operator/handovers).
 oc-guardian federation handover accept --federation <slug> --offer <64-hex offer id>
 ```
 

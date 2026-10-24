@@ -1,0 +1,16 @@
+{
+  "payload": {
+    "action": "creator-handover-offer",
+    "params": {
+      "federation_slug": "oc-fixture-v1",
+      "offered_at": "2026-10-24T11:47:45Z",
+      "operator_id": "op-100ba4dce69964870fd63ada77fe2c84",
+      "to_operator_id": "op-9beb638422abc09ce47bee1f9cd5792d"
+    },
+    "nonce": 1792842465,
+    "expires_at": 1793447265,
+    "federation": "oc-fixture-v1"
+  },
+  "pubkey": "969dc9dda26aff8a208c2c74f8b2066c610dca33861287fd3ded880b79349c83",
+  "sig_hex": "d611cd613b5ed541f25ede7c282b94f126bdde2eedce00eb32458ec33d057ccfee73cdd93dfa066b5bbed7bcf1e88ec398b37c8f8a42e0bb9a7d5fae6f04bd04"
+}

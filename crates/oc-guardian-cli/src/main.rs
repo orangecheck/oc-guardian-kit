@@ -214,7 +214,7 @@ enum HandoverCommand {
         /// The federation's slug.
         #[arg(long)]
         federation: String,
-        /// The offer's id (64 hex), as ochk.app/me/operator/handovers shows it.
+        /// The offer's id (64 hex), as `handover offer` printed it.
         #[arg(long)]
         offer: String,
         #[arg(long, default_value = "creator-handover-accept.json")]

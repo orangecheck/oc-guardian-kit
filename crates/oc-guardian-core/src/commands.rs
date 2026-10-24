@@ -20,7 +20,7 @@ use sha2::{Digest, Sha256};
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
-use crate::actions::{AcceptanceEnvelope, ActionEnvelope, ActionPayload, ActionType};
+use crate::actions::{envelope_id, AcceptanceEnvelope, ActionEnvelope, ActionPayload, ActionType};
 use crate::config::{
     ensure_dir, read_id, read_kit_config, resolve_dir, write_id, write_kit_config, write_pubkey,
     BridgeConfig, KitConfig,
@@ -403,14 +403,23 @@ fn sign_envelope_at(
 /// The operator endpoints are session-gated (the kit is not signed-in), so
 /// the kit's job is to PRODUCE the hardware-signed envelope; the operator
 /// submits it via the signed-in ochk.app surface — same pattern as
-/// `charter sign`.
-fn write_envelope(env: &ActionEnvelope, out: &str, what: &str, page: &str) -> Result<()> {
+/// `charter sign`. `notes` print after the upload line.
+fn write_envelope(
+    env: &ActionEnvelope,
+    out: &str,
+    what: &str,
+    page: &str,
+    notes: &[String],
+) -> Result<()> {
     let json = serde_json::to_vec_pretty(env).context("encoding envelope")?;
     fs::write(out, &json).with_context(|| format!("writing {out}"))?;
     println!();
     println!("  ✓ signed {what} envelope written to {out}");
     println!("    it carries your operator key's signature · OC cannot forge it.");
     println!("    upload it at {page}, signed in to your ochk.app account.");
+    for note in notes {
+        println!("    {note}");
+    }
     println!();
     Ok(())
 }
@@ -662,6 +671,7 @@ pub fn alerts_post(federation: String, severity: String, body: String) -> Result
         "incident.json",
         "incident",
         "ochk.app/me/operator/incidents",
+        &[],
     )
 }
 
@@ -700,6 +710,7 @@ pub fn payouts_claim(federation: String, to: String, amount: Option<u64>) -> Res
         "payouts-claim.json",
         "payouts-claim",
         "ochk.app/me/operator/payouts",
+        &[],
     )
 }
 
@@ -856,6 +867,7 @@ pub fn exit_handoff(federation: String, replacement: String, effective_date: Str
         "exit-handoff.json",
         "exit-handoff",
         &format!("ochk.app/me/operator/federations/{federation}"),
+        &[],
     )
 }
 
@@ -895,6 +907,7 @@ pub fn exit_ratify(
         "exit-ratify.json",
         "exit-ratify",
         &format!("ochk.app/me/operator/federations/{federation}"),
+        &[],
     )
 }
 
@@ -1210,6 +1223,7 @@ fn handover_accept_envelope(
 
 /// `oc-guardian federation handover offer` · the creator offers their
 /// federation to another operator key, which accepts it from its own account.
+/// Prints the offer's id, which the acceptance signs.
 pub fn federation_handover_offer(
     federation: String,
     to: String,
@@ -1222,12 +1236,14 @@ pub fn federation_handover_offer(
         .context("system clock before epoch")?
         .as_secs();
     let env = handover_offer_envelope(signer.as_ref(), &federation, &to, valid_days, now)?;
+    let offer_id = envelope_id(&env).context("computing the offer id")?;
     let slug = federation.trim();
     write_envelope(
         &env,
         &out,
         "creator-handover-offer",
         &format!("https://ochk.app/me/operator/federations/{slug}#handover"),
+        &[format!("offer id: {offer_id}")],
     )
 }
 
@@ -1245,6 +1261,7 @@ pub fn federation_handover_accept(federation: String, offer: String, out: String
         &out,
         "creator-handover-accept",
         "https://ochk.app/me/operator/handovers",
+        &[],
     )
 }
 
@@ -1436,7 +1453,7 @@ mod tests {
     fn written_and_verified(env: &ActionEnvelope, name: &str) -> ActionEnvelope {
         let path = std::env::temp_dir().join(format!("{name}-{}.json", std::process::id()));
         let out = path.to_str().unwrap();
-        write_envelope(env, out, name, "https://ochk.app/me/operator").unwrap();
+        write_envelope(env, out, name, "https://ochk.app/me/operator", &[]).unwrap();
         let read: ActionEnvelope = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         fs::remove_file(&path).unwrap();
         let sig: [u8; 64] = hex::decode(&read.sig_hex).unwrap().try_into().unwrap();

@@ -85,6 +85,19 @@ pub struct ActionPayload {
     pub federation: Option<String>,
 }
 
+/// An envelope's id, as the portal's `envelopeId` computes it: sha256 of the
+/// signer's lowercase pubkey hex, a zero byte, and the signed payload bytes.
+/// A handover acceptance signs its offer's id.
+pub fn envelope_id(env: &ActionEnvelope) -> serde_json::Result<String> {
+    use sha2::{Digest, Sha256};
+    let signed = serde_json::to_vec(&env.payload)?;
+    let mut h = Sha256::new();
+    h.update(hex::encode(env.pubkey.0).as_bytes());
+    h.update([0u8]);
+    h.update(&signed);
+    Ok(hex::encode(h.finalize()))
+}
+
 /// Reviewer-issued acceptance envelope. Asymmetric counterpart to
 /// `ActionEnvelope` — sent in the OC→operator direction (an applicant
 /// receives this in reply to a successful program-apply submission).
@@ -355,6 +368,22 @@ mod tests {
             serde_json::from_str::<ActionType>("\"creator-handover-accept\"").unwrap(),
             ActionType::CreatorHandoverAccept
         );
+    }
+
+    /// The offer the kit signed for me.ochk.io's fixtures; the portal's
+    /// `envelopeId` gives this id for it.
+    #[test]
+    fn envelope_id_matches_the_portals() {
+        let env: ActionEnvelope =
+            serde_json::from_str(include_str!("../test-fixtures/creator-handover-offer.json"))
+                .unwrap();
+        assert_eq!(
+            envelope_id(&env).unwrap(),
+            "8d7352e37f03b0b12981ac448b8d40d591163d2c4c8fefd28411f4a0d1ca13ff"
+        );
+        let mut other = env.clone();
+        other.payload.nonce += 1;
+        assert_ne!(envelope_id(&other).unwrap(), envelope_id(&env).unwrap());
     }
 
     // ── ActionError diagnostics ─────────────────────────────────
