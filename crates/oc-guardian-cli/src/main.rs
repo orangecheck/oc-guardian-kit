@@ -102,6 +102,10 @@ enum Command {
     /// Let a hosted guardian's own key sign this seat's liveness attestations.
     AttestDelegate(AttestDelegateArgs),
 
+    /// Bind your operator key to your ochk.app account, without the key
+    /// entering a browser. Writes a file to upload at ochk.app/me/operator.
+    Bind(BindArgs),
+
     /// Optional bridge: opt in to portal-mediated signed action requests.
     #[command(subcommand)]
     Bridge(BridgeCommand),
@@ -386,6 +390,21 @@ struct AttestDelegateArgs {
     out: String,
 }
 
+#[derive(Parser)]
+struct BindArgs {
+    /// Your ochk.app account's id (did:oc:…), as ochk.app/me/operator shows it.
+    #[arg(long)]
+    did: String,
+    /// A recent bitcoin mainnet block's height and hash (within 6 of the tip).
+    /// ochk.app/me/operator shows the command with the current tip filled in.
+    #[arg(long)]
+    block_height: u64,
+    #[arg(long)]
+    block_hash: String,
+    #[arg(long, default_value = "bind-claim.json")]
+    out: String,
+}
+
 #[derive(Subcommand)]
 enum BridgeCommand {
     /// Opt in to portal-mediated signed action requests.
@@ -523,6 +542,9 @@ fn main() -> Result<()> {
             args.block_hash,
             args.out,
         ),
+        Command::Bind(args) => {
+            oc_guardian_core::commands::bind(args.did, args.block_height, args.block_hash, args.out)
+        }
         Command::Bridge(cmd) => match cmd {
             BridgeCommand::Enable => oc_guardian_portal_bridge::enable(),
             BridgeCommand::Allow { action } => oc_guardian_portal_bridge::allow(action),

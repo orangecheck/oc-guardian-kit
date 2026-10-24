@@ -392,14 +392,13 @@ fn build_signed_envelope(
 /// the kit's job is to PRODUCE the hardware-signed envelope; the operator
 /// submits it via the signed-in ochk.app surface — same pattern as
 /// `charter sign`.
-fn write_envelope(env: &ActionEnvelope, out: &str, what: &str, submit_path: &str) -> Result<()> {
+fn write_envelope(env: &ActionEnvelope, out: &str, what: &str, page: &str) -> Result<()> {
     let json = serde_json::to_vec_pretty(env).context("encoding envelope")?;
     fs::write(out, &json).with_context(|| format!("writing {out}"))?;
     println!();
     println!("  ✓ signed {what} envelope written to {out}");
-    println!("    it carries your hardware-key signature · OC cannot forge it.");
-    println!("    submit it signed-in at the matching ochk.app/me/operator surface");
-    println!("    (the portal POSTs it to {submit_path}).");
+    println!("    it carries your operator key's signature · OC cannot forge it.");
+    println!("    upload it at {page}, signed in to your ochk.app account.");
     println!();
     Ok(())
 }
@@ -646,7 +645,12 @@ pub fn alerts_post(federation: String, severity: String, body: String) -> Result
         params,
         Some(federation),
     )?;
-    write_envelope(&env, "incident.json", "incident", "/api/operator/incidents")
+    write_envelope(
+        &env,
+        "incident.json",
+        "incident",
+        "ochk.app/me/operator/incidents",
+    )
 }
 
 /// `oc-guardian payouts list` · accrued-payout figures are session-gated
@@ -683,7 +687,7 @@ pub fn payouts_claim(federation: String, to: String, amount: Option<u64>) -> Res
         &env,
         "payouts-claim.json",
         "payouts-claim",
-        "/api/operator/payouts/claim",
+        "ochk.app/me/operator/payouts",
     )
 }
 
@@ -832,13 +836,13 @@ pub fn exit_handoff(federation: String, replacement: String, effective_date: Str
         signer.as_ref(),
         ActionType::ExitHandoff,
         params,
-        Some(federation),
+        Some(federation.clone()),
     )?;
     write_envelope(
         &env,
         "exit-handoff.json",
         "exit-handoff",
-        "/api/operator/exits",
+        &format!("ochk.app/me/operator/federations/{federation}"),
     )
 }
 
@@ -871,13 +875,13 @@ pub fn exit_ratify(
         signer.as_ref(),
         ActionType::ExitRatify,
         params,
-        Some(federation),
+        Some(federation.clone()),
     )?;
     write_envelope(
         &env,
         "exit-ratify.json",
         "exit-ratify",
-        &format!("/api/operator/exits/{exit_id}/ratify"),
+        &format!("ochk.app/me/operator/federations/{federation}"),
     )
 }
 
@@ -1022,9 +1026,94 @@ pub fn attest_delegate(
         delegation.attest_pubkey,
         iso8601_utc(delegation.not_after)
     );
-    println!("    submit it signed-in: the portal takes it at");
-    println!("    /api/operator/federations/{federation}/seats/{seat_index}/attest-delegation");
-    println!("    (body as written). Revoke it from the seat's hosted status on ochk.app.");
+    println!("    upload it at ochk.app/me/operator/federations/{federation}, signed in to the");
+    println!("    account your key is bound to (oc-guardian bind). Revoke it from the seat's");
+    println!("    hosted status there.");
+    println!();
+    Ok(())
+}
+
+/// A bind claim: proof that whoever binds this operator key to an ochk.app
+/// account holds it. The account and a recent block are inside the signed
+/// bytes, so it cannot be replayed to another account or kept for later.
+#[derive(Debug, serde::Serialize)]
+struct BindClaim {
+    did_oc: String,
+    operator_pubkey: String,
+    block_height: u64,
+    block_hash: String,
+    sig: String,
+}
+
+/// The bytes a bind claim signs. oc-me-web `canonicalBindClaimBytes`, line
+/// for line; the cross-language test below pins it.
+fn bind_claim_bytes(
+    did_oc: &str,
+    operator_pubkey: &str,
+    block_height: u64,
+    block_hash: &str,
+) -> Vec<u8> {
+    [
+        "oc-me/operator-bind/v1".to_string(),
+        format!("did_oc: {}:{}", did_oc.len(), did_oc),
+        format!("operator_pubkey: {operator_pubkey}"),
+        format!("block_height: {block_height}"),
+        format!("block_hash: {block_hash}"),
+    ]
+    .join("\n")
+    .into_bytes()
+}
+
+fn sign_bind_claim(
+    signer: &dyn Signer,
+    did_oc: &str,
+    block_height: u64,
+    block_hash: &str,
+) -> Result<BindClaim> {
+    let well_formed = did_oc.strip_prefix("did:oc:").is_some_and(|id| {
+        !id.is_empty()
+            && id.len() <= 64
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+    });
+    if !well_formed {
+        anyhow::bail!(
+            "--did must be your ochk.app account's id (did:oc:…), as ochk.app/me/operator shows it"
+        );
+    }
+    let block_hash = hex64(block_hash, "--block-hash")?;
+    let operator_pubkey = hex::encode(signer.pubkey().0);
+    let bytes = bind_claim_bytes(did_oc, &operator_pubkey, block_height, &block_hash);
+    let sig = signer.sign(&bytes).context("signing the bind claim")?;
+    Ok(BindClaim {
+        did_oc: did_oc.to_string(),
+        operator_pubkey,
+        block_height,
+        block_hash,
+        sig: hex::encode(sig),
+    })
+}
+
+/// `oc-guardian bind` · bind this operator key to an ochk.app account, for a
+/// key that never enters a browser. Writes the body ochk.app/me/operator
+/// uploads; payouts, exits and attest delegations then accept what this key
+/// signs from that account.
+pub fn bind(did_oc: String, block_height: u64, block_hash: String, out: String) -> Result<()> {
+    let (id, signer) = load_operator()?;
+    let claim = sign_bind_claim(signer.as_ref(), &did_oc, block_height, &block_hash)?;
+    let body = serde_json::json!({
+        "pubkey": claim.operator_pubkey,
+        "operator_id": id.0,
+        "bind_claim": claim,
+    });
+    let json = serde_json::to_vec_pretty(&body).context("encoding the bind claim")?;
+    fs::write(&out, &json).with_context(|| format!("writing {out}"))?;
+    println!();
+    println!("  ✓ signed bind claim written to {out}");
+    println!("    binds operator {} to {did_oc}", id.0);
+    println!("    upload it at ochk.app/me/operator, signed in to that account,");
+    println!("    within 6 blocks (about an hour) of block {block_height}.");
     println!();
     Ok(())
 }
@@ -1172,6 +1261,44 @@ mod tests {
         assert!(sign_attest_delegation(&signer, "f", 0, &key, 30, 1, "zz", 0).is_err());
         assert!(sign_attest_delegation(&signer, "", 0, &key, 30, 1, &hash, 0).is_err());
         assert!(sign_attest_delegation(&signer, "f", 0, &key, 366, 1, &hash, 0).is_ok());
+    }
+
+    /// Signed with the same key and fields as oc-me-web's
+    /// `canonicalBindClaimBytes`; its `verifyBindClaim` accepted that claim.
+    /// A drift in either side's bytes breaks it.
+    #[test]
+    fn bind_claim_matches_the_portals_verifier() {
+        let signer = keychain::StaticSigner::from_hex(&"07".repeat(32)).unwrap();
+        let did = format!("did:oc:{}", "ab".repeat(16));
+        let c = sign_bind_claim(&signer, &did, 900_000, &"AB".repeat(32)).unwrap();
+        assert_eq!(
+            c.operator_pubkey,
+            "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c"
+        );
+        assert_eq!(c.block_hash, "ab".repeat(32));
+        assert_eq!(
+            c.sig,
+            "ef8f4c6e08f690efee3d1e3bbc0e016b3633680c0ec6be67138778ec4d85ffbe\
+             30bf9d45a0ee00b1a5a62412318e6973da602982da76032469b261a936fe6909"
+        );
+    }
+
+    #[test]
+    fn bind_claim_refuses_what_the_portal_would() {
+        let signer = keychain::StaticSigner::from_hex(&"07".repeat(32)).unwrap();
+        let hash = "ab".repeat(32);
+        for did in [
+            "",
+            "did:oc:",
+            "oc:abc",
+            "did:oc:ABC",
+            "did:oc:ab\ncd",
+            "did:key:abc",
+        ] {
+            assert!(sign_bind_claim(&signer, did, 1, &hash).is_err(), "{did:?}");
+        }
+        assert!(sign_bind_claim(&signer, "did:oc:ab12", 1, "zz").is_err());
+        assert!(sign_bind_claim(&signer, "did:oc:ab12", 1, &hash).is_ok());
     }
 
     #[test]

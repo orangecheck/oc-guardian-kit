@@ -13,7 +13,7 @@ Every row here is a portal route the operator might land on, paired with the kit
 | # | Lifecycle stage | Portal path | Kit-only equivalent |
 |---|---|---|---|
 | 01 | Apply to the program | `ochk.app/me/operator/apply`: paste your answers, signed with the key in your browser | Email `apply@ochk.io` with the application questionnaire — see [§01 below](#01--apply-to-the-program) |
-| 02 | Get accepted + onboarded | Portal registers the key in your browser | `oc-guardian init` (OS keychain, or `--key-file` on a server) — see [§02](#02--get-accepted--onboarded) |
+| 02 | Get accepted + onboarded | Portal registers the key in your browser | `oc-guardian init` (OS keychain, or `--key-file` on a server), then `oc-guardian bind` — see [§02](#02--get-accepted--onboarded) |
 | 03 | Discover federations seeking guardians | Portal lists federations with seats open | `oc-guardian federations list` (the same directory, read directly) — see [§03](#03--discover-federations-seeking-guardians) |
 | 04 | Join a federation | Portal mediates the seat and the charter | A seat assignment plus your charter ratification — see [§04](#04--join-a-federation) |
 | 05 | Run the DKG ceremony | Portal drives the setup API of the seats it hosts | `oc-guardian ceremony {start, add-peer, dkg, status, finalize}` on your own guardian — see [§05](#05--run-the-dkg-ceremony) |
@@ -83,7 +83,14 @@ oc-guardian init --key-file /var/lib/oc-guardian/operator.key
 
 # Check whether your key is in the public operator registry (it is once accepted).
 oc-guardian register
+
+# Bind the key to your ochk.app account without it entering a browser.
+# ochk.app/me/operator shows this command with your account and a recent block
+# filled in; upload the bind-claim.json it writes on that page within the hour.
+oc-guardian bind --did <your did:oc> --block-height <h> --block-hash <hash>
 ```
+
+Binding lets the payouts claims, exits and attest delegations your key signs be submitted from that account.
 
 `--hsm yubikey | ledger | passkey` is accepted, but no hardware-token backend is built yet: the key still goes in the OS keychain. The registry is the public list of accepted operator keys at `me.ochk.io/api/operator/registry`.
 
@@ -204,7 +211,7 @@ oc-guardian alerts post \
     --body "guardian-3 unreachable since 09:14 UTC; investigating"
 ```
 
-Writes `incident.json`, a signed envelope in the shape the portal takes at `/api/operator/incidents`.
+Writes `incident.json`. Upload it at `ochk.app/me/operator/incidents`.
 
 ---
 
@@ -218,7 +225,7 @@ Writes `incident.json`, a signed envelope in the shape the portal takes at `/api
 oc-guardian payouts claim <federation-slug> --to you@wallet.example [--amount <sats>]
 ```
 
-Writes a claim envelope signed with your operator key. Accrued figures are only shown signed in on the portal; `oc-guardian payouts list` says so.
+Writes `payouts-claim.json`, signed with your operator key. Upload it at `ochk.app/me/operator/payouts` from the account your key is bound to (§02). Accrued figures are only shown signed in on the portal; `oc-guardian payouts list` says so.
 
 ---
 
@@ -235,7 +242,7 @@ oc-guardian exit-handoff \
     --effective-date 2026-06-15
 ```
 
-Produces a signed handoff envelope. The other guardians countersign it with `oc-guardian exit-ratify`.
+Writes `exit-handoff.json`. Upload it at `ochk.app/me/operator/federations/<slug>` from the account your key is bound to (§02). The other guardians countersign it with `oc-guardian exit-ratify`, and upload their `exit-ratify.json` on the same page.
 
 ---
 
@@ -289,3 +296,20 @@ There is no end-to-end bypass suite against a live federation yet. It runs on th
 ## Maintenance
 
 When a portal feature changes, this file changes with it, and a feature that touches what an operator signs gets a cross-language test on both sides.
+
+---
+
+## Submitting what the kit signs
+
+Each of these commands signs locally and writes a file. Upload it signed in, on the page the kit names. The server checks the signature and your seat against the file's own key; it never takes the account's word for either.
+
+| Command | File | Upload it at |
+|---|---|---|
+| `oc-guardian bind` | `bind-claim.json` | `ochk.app/me/operator` |
+| `oc-guardian alerts post` | `incident.json` | `ochk.app/me/operator/incidents` |
+| `oc-guardian payouts claim` | `payouts-claim.json` | `ochk.app/me/operator/payouts` |
+| `oc-guardian exit-handoff` | `exit-handoff.json` | `ochk.app/me/operator/federations/<slug>` |
+| `oc-guardian exit-ratify` | `exit-ratify.json` | `ochk.app/me/operator/federations/<slug>` |
+| `oc-guardian attest-delegate` | `attest-delegation.json` | `ochk.app/me/operator/federations/<slug>` |
+
+A payouts claim, an exit and an attest delegation are accepted only from the account your key is bound to (§02).

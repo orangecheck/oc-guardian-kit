@@ -50,6 +50,9 @@ oc-guardian init
 #    On a server with no OS keychain (init fails with a DBus error), keep it in
 #    a file instead. The file is the key: anyone who can read it can sign as you.
 oc-guardian init --key-file /var/lib/oc-guardian/operator.key
+#    Bind it to your ochk.app account: ochk.app/me/operator shows this command
+#    filled in, and takes the bind-claim.json it writes.
+oc-guardian bind --did <your did:oc> --block-height <h> --block-hash <hash>
 
 # 2. Apply. Email apply@ochk.io the signed envelope this writes.
 oc-guardian apply prepare --out application.json --questionnaire ./answers.md
@@ -143,7 +146,7 @@ Every lifecycle stage of the program (application → exit) has a kit command. S
 | Stage | Command |
 |---|---|
 | Application | `oc-guardian apply {prepare, verify-acceptance}` |
-| Onboarding | `oc-guardian init`, `oc-guardian register` (checks the registry) |
+| Onboarding | `oc-guardian init`, `oc-guardian register` (checks the registry), `oc-guardian bind` (binds the key to your ochk.app account) |
 | Federations | `oc-guardian federations list` (`join` and `leave` print the steps) |
 | Ceremony | `oc-guardian ceremony {start, add-peer, dkg, status, finalize}` |
 | Charter | `oc-guardian charter {fetch, sign, publish}` |
@@ -156,7 +159,7 @@ Every lifecycle stage of the program (application → exit) has a kit command. S
 
 ## What needs the portal
 
-Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify-status`, `federations list` and `charter {fetch, sign, publish}`. `alerts post`, `payouts claim`, `exit-handoff`, `exit-ratify` and `attest-delegate` sign locally and write an envelope for you to submit; `exit-ratify` and `attest-delegate` need a recent bitcoin mainnet block (height and hash, within 6 of the tip). Everything else is local.
+Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify-status`, `federations list` and `charter {fetch, sign, publish}`. `bind`, `alerts post`, `payouts claim`, `exit-handoff`, `exit-ratify` and `attest-delegate` sign locally and write a file you upload, signed in, on the ochk.app page the kit names (BYPASS.md, "Submitting what the kit signs"). `bind`, `exit-ratify` and `attest-delegate` need a recent bitcoin mainnet block (height and hash, within 6 of the tip). Everything else is local.
 
 ## Two fedimint behaviours to know
 

@@ -6,6 +6,23 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
+## 0.2.9
+
+### Added
+
+- **`oc-guardian bind`** signs the claim that binds your operator key to your
+  ochk.app account, for a key that never enters a browser. Upload the
+  `bind-claim.json` it writes at ochk.app/me/operator. Payouts claims, exits
+  and attest delegations your key signs are then accepted from that account.
+
+### Changed
+
+- Every file the kit signs names the ochk.app page that takes it.
+
+### Docs
+
+- BYPASS.md: "Submitting what the kit signs", one row per file.
+
 ## 0.2.8
 
 ### Changed
