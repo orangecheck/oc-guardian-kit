@@ -165,7 +165,7 @@ impl Signer for StaticSigner {
 /// The operator's signer: the key file `init --key-file` recorded, else
 /// the OS keychain entry. Ok(None) when neither holds a key.
 pub fn load_signer(operator_id: &str) -> Result<Option<Box<dyn Signer>>> {
-    let cfg = read_kit_config(&resolve_dir(None)?)?.unwrap_or_default();
+    let cfg = read_kit_config(&resolve_dir()?)?.unwrap_or_default();
     if let Some(path) = cfg.key_file {
         return Ok(Some(Box::new(FileSigner::load(Path::new(&path))?)));
     }

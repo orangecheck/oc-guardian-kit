@@ -80,7 +80,7 @@ pub fn fetch(slug: String) -> Result<()> {
 /// `recordCharterSignature` validator already accepts.
 pub fn sign(slug: String, out: String, hsm: String) -> Result<()> {
     // 1. Resolve operator identity from kit config.
-    let config_dir = resolve_dir(None)?;
+    let config_dir = resolve_dir()?;
     let id = read_id(&config_dir)
         .context("read operator id from config")?
         .ok_or_else(|| anyhow!("no operator id on disk · run `oc-guardian init` first"))?;

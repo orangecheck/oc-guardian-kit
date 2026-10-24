@@ -16,6 +16,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -48,11 +49,23 @@ pub struct BridgeConfig {
     pub allowed_actions: Vec<String>,
 }
 
-/// Resolve the operator's config dir. Honors `--config-dir` override
-/// passed by the CLI; otherwise falls back to the platform default.
-pub fn resolve_dir(override_path: Option<&str>) -> Result<PathBuf> {
-    if let Some(p) = override_path {
-        return Ok(PathBuf::from(p));
+static DIR_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
+
+/// Set once, at startup, from `--config-dir` (or `OC_GUARDIAN_CONFIG_DIR`),
+/// so every command reads and writes the same dir.
+pub fn set_dir_override(dir: PathBuf) {
+    let _ = DIR_OVERRIDE.set(dir);
+}
+
+/// The operator's config dir: the override if one was set, otherwise the
+/// platform default.
+pub fn resolve_dir() -> Result<PathBuf> {
+    dir_from(DIR_OVERRIDE.get().map(PathBuf::as_path))
+}
+
+fn dir_from(override_dir: Option<&Path>) -> Result<PathBuf> {
+    if let Some(p) = override_dir {
+        return Ok(p.to_path_buf());
     }
     let base = dirs::config_dir().context("could not locate user config dir")?;
     Ok(base.join(DIR_NAME))
@@ -205,14 +218,14 @@ mod tests {
     }
 
     #[test]
-    fn resolve_dir_honors_explicit_override() {
-        let p = resolve_dir(Some("/tmp/forced-path")).unwrap();
+    fn dir_from_honors_an_override() {
+        let p = dir_from(Some(Path::new("/tmp/forced-path"))).unwrap();
         assert_eq!(p, PathBuf::from("/tmp/forced-path"));
     }
 
     #[test]
-    fn resolve_dir_appends_oc_guardian_to_platform_default() {
-        let p = resolve_dir(None).unwrap();
+    fn dir_from_appends_oc_guardian_to_platform_default() {
+        let p = dir_from(None).unwrap();
         assert!(
             p.ends_with("oc-guardian"),
             "expected platform default to end in oc-guardian, got {}",

@@ -62,7 +62,7 @@ We aim to reply to every report within 30 days. We can't promise a time to a fix
 Release CI builds with `cargo build --release --locked` on a pinned Rust toolchain (1.85), so dependency versions come from `Cargo.lock`. The build is not yet checked for byte-identical reproducibility. To build and compare yourself:
 
 ```sh
-git checkout v0.2.6
+git checkout "$(git describe --tags --abbrev=0)"  # or the release you are comparing
 cargo build --release --locked -p oc-guardian-cli
 sha256sum target/release/oc-guardian
 ```

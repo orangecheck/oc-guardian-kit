@@ -13,8 +13,8 @@ Verified-release install (recommended). Archives exist for
 
 ```sh
 T=x86_64-unknown-linux-gnu
-# 1. Pull the signed release.
-gh release download v0.2.6 -R orangecheck/oc-guardian-kit -p "oc-guardian-$T.*"
+# 1. Pull the latest signed release (name a tag after "download" to pin one).
+gh release download -R orangecheck/oc-guardian-kit -p "oc-guardian-$T.*"
 
 # 2. Verify the cosign keyless signature.
 cosign verify-blob \
@@ -35,8 +35,9 @@ oc-guardian --version
 Build-from-source install:
 
 ```sh
-git clone --depth 1 --branch v0.2.6 https://github.com/orangecheck/oc-guardian-kit
+git clone https://github.com/orangecheck/oc-guardian-kit
 cd oc-guardian-kit
+git checkout "$(git describe --tags --abbrev=0)"  # the latest release
 cargo build --release --locked -p oc-guardian-cli  # dependency versions pinned by Cargo.lock
 sudo install target/release/oc-guardian /usr/local/bin/
 ```
@@ -58,10 +59,13 @@ oc-guardian charter fetch <federation-slug>
 oc-guardian charter sign <federation-slug> --out charter-sig.json
 oc-guardian charter publish --file charter-sig.json
 
-# 4. Run the guardian (see "Running fedimintd" for its settings).
-oc-guardian fedimintd run
+# 4. Run the guardian. Its settings come from the environment ("Running
+#    fedimintd"). Until DKG is done its setup must not be reachable from other
+#    machines, so give it a setup password (or bind its API and UI to 127.0.0.1).
+OC_GUARDIAN_SETUP_PASSWORD=… oc-guardian fedimintd run
 
-# 5. Set up the federation with the other guardians (see "The DKG ceremony").
+# 5. Set up the federation with the other guardians, with the same password
+#    (see "The DKG ceremony").
 FM_PASSWORD=… oc-guardian ceremony start --name <your-guardian-name>
 ```
 
@@ -93,9 +97,19 @@ Without your own binds, P2P and the API listen on all interfaces (peers and clie
 
 **On Fly**, the setup UI isn't one of the app's public services. To reach it over the org's private network with `fly proxy 8175:8175 -a <app>`, bind it to the machine's private IPv6 address (the one `fly-local-6pn` names in `/etc/hosts`): `FM_BIND_UI=[<that address>]:8175`. Every machine in the org can reach that address, not just yours.
 
-**More than one guardian on a host:** fedimintd's metrics listen on 127.0.0.1:8176 by default, so give each guardian its own `FM_BIND_METRICS`.
+**More than one guardian on a host:** fedimintd's metrics listen on 127.0.0.1:8176 by default, so give each guardian its own `FM_BIND_METRICS`. Give each its own operator config dir too: `--config-dir <dir>` (or `OC_GUARDIAN_CONFIG_DIR`) works with every command.
 
-**Where fedimintd runs:** the upstream `fedimintd` release the kit pins is a nix bundle. On hosts that restrict unprivileged user namespaces (Ubuntu 23.10 and later by default) it fails with "Cannot bind mount /dev … Permission denied". The guardian image installs upstream's `.deb` instead. On such a host, unpack the bundle (`fedimintd --extract`) and point `--config` at a wrapper that runs the unpacked binary.
+**Ports:** choose ports below Linux's ephemeral range (32768–60999 by default). Any outgoing connection on the machine can take a port in that range, and a guardian that loses its P2P port during DKG restarts, forgets its setup, and leaves the ceremony to be run again.
+
+**Where fedimintd runs:** the upstream `fedimintd` release the kit pins is a nix bundle. On hosts that restrict unprivileged user namespaces (Ubuntu 23.10 and later by default) it fails with "Cannot bind mount /dev … Permission denied". The guardian image installs upstream's `.deb` instead. On such a host, install that `.deb`, or unpack the bundle: `fedimintd --extract` unpacks into the current directory (`dat/nix/store`, plus `env` and `run`). The unpacked binary's loader and libraries point into `/nix/store`, so it does not run directly. Point `--config` at a wrapper that starts it through the loader it was built for:
+
+```sh
+#!/bin/sh
+S=/path/to/dat/nix/store
+BIN=$(ls "$S"/*-fedimintd-*/bin/fedimintd)
+LD=$S/$(grep -aom1 '/nix/store/[a-z0-9]*-glibc-[^/]*/lib/ld-linux[a-z0-9_.-]*' "$BIN" | cut -d/ -f4-)
+exec "$LD" --library-path "$(dirname "$LD"):$(ls -d "$S"/*/lib | tr '\n' ':')" "$BIN" "$@"
+```
 
 ## The DKG ceremony
 
@@ -147,7 +161,7 @@ Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify
 ## Two fedimint behaviours to know
 
 - After DKG, fedimintd publishes its API address to public pkarr relays unless `FM_PKARR_ENABLE=false`.
-- The fedimint 0.11.4 client watches for deposits through Esplora only.
+- The fedimint 0.11.4 client watches for deposits through Esplora only. Point it at one with `FM_DEFAULT_BITCOIN_RPC_KIND=esplora` and `FM_DEFAULT_BITCOIN_RPC_URL=<esplora url>`.
 
 ## What is not built yet
 

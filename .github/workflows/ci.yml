@@ -31,6 +31,13 @@ jobs:
             echo "::error::absolute home-directory path in a tracked file"
             exit 1
           fi
+      - name: install and build steps name no release
+        # A tag written into these steps goes stale at the next release.
+        run: |
+          if git grep -nIE '(release download|--branch|checkout) v[0-9]' -- '*.md'; then
+            echo "::error::an install or build step names a release tag"
+            exit 1
+          fi
       - name: install system deps
         # libdbus-1-dev: required by the keyring crate's
         # sync-secret-service feature (Linux keyring backend

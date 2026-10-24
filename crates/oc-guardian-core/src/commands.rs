@@ -35,7 +35,7 @@ use crate::keychain;
 /// Refuses to overwrite an existing identity — operators rotate via
 /// `oc-guardian portal forget` (or by deleting the keychain entry +
 /// config dir manually) and re-running `init`.
-pub fn init(hsm: String, config_dir: Option<String>, key_file: Option<String>) -> Result<()> {
+pub fn init(hsm: String, key_file: Option<String>) -> Result<()> {
     let backend = HsmBackend::from_flag(&hsm)?;
 
     // Only the OS keychain (or, when asked for, a key file) is built.
@@ -45,7 +45,7 @@ pub fn init(hsm: String, config_dir: Option<String>, key_file: Option<String>) -
         println!("  note: --hsm {hsm} is not built yet · the key goes in the OS keychain instead");
     }
 
-    let dir = resolve_dir(config_dir.as_deref())?;
+    let dir = resolve_dir()?;
     ensure_dir(&dir)?;
 
     // Refuse to clobber an existing identity. If operator.id exists,
@@ -154,7 +154,7 @@ pub fn apply_prepare(out: String, questionnaire: Option<String>, _hsm: String) -
     let q_hash_hex = hex::encode(q_sha256);
 
     // 2. Load operator identity from config dir + keychain.
-    let dir = resolve_dir(None)?;
+    let dir = resolve_dir()?;
     let id = read_id(&dir)?
         .context("no operator identity in config dir — run `oc-guardian init` first")?;
     let signer = keychain::load_signer(&id.0)?.with_context(|| {
@@ -348,7 +348,7 @@ pub fn apply_verify_acceptance(file: String, reviewer_pubkey_hex: String) -> Res
 
 /// Load the operator identity + keychain signer, or a clear error.
 fn load_operator() -> Result<(crate::identity::OperatorId, Box<dyn Signer>)> {
-    let dir = resolve_dir(None)?;
+    let dir = resolve_dir()?;
     let id = read_id(&dir)?.context("no operator identity — run `oc-guardian init` first")?;
     let signer = keychain::load_signer(&id.0)?.with_context(|| {
         format!(
@@ -504,7 +504,7 @@ pub fn federations_leave(slug: String) -> Result<()> {
 /// network. Useful before signing anything to confirm the kit is
 /// reading the operator the operator expects.
 pub fn status() -> Result<()> {
-    let dir = resolve_dir(None)?;
+    let dir = resolve_dir()?;
 
     println!();
     println!("  oc-guardian-kit v{}", crate::VERSION);
@@ -1059,7 +1059,7 @@ fn exit_ratify_params(
 /// `oc-guardian portal forget` · wipe local operator state — the keychain
 /// key + the config dir. Irreversible; re-init to start fresh.
 pub fn portal_forget() -> Result<()> {
-    let dir = resolve_dir(None)?;
+    let dir = resolve_dir()?;
     let id = read_id(&dir)?;
     if let Some(id) = &id {
         let _ = keychain::delete(&id.0); // best-effort; dir removal is the source of truth

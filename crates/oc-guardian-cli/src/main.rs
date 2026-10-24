@@ -32,6 +32,11 @@ struct Cli {
     /// Increase log verbosity. Repeat for more detail.
     #[arg(short, long, global = true, action = clap::ArgAction::Count)]
     verbose: u8,
+
+    /// The operator's config dir, for every command. Default: the platform's
+    /// config dir + `oc-guardian` (`~/.config/oc-guardian/` on Linux).
+    #[arg(long, global = true, env = "OC_GUARDIAN_CONFIG_DIR")]
+    config_dir: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -116,11 +121,6 @@ struct InitArgs {
     /// Other options: `yubikey`, `ledger`, `passkey`.
     #[arg(long, default_value = "os-keychain")]
     hsm: String,
-
-    /// Path to write the operator's public key + identifier. Default
-    /// is `~/.config/oc-guardian/`.
-    #[arg(long)]
-    config_dir: Option<String>,
 
     /// Keep the operator key in this file instead of the OS keychain, for a
     /// machine without one (a headless server). The file is the key:
@@ -409,11 +409,12 @@ enum PortalCommand {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     init_tracing(cli.verbose);
+    if let Some(dir) = cli.config_dir {
+        oc_guardian_core::config::set_dir_override(dir.into());
+    }
 
     match cli.command {
-        Command::Init(args) => {
-            oc_guardian_core::commands::init(args.hsm, args.config_dir, args.key_file)
-        }
+        Command::Init(args) => oc_guardian_core::commands::init(args.hsm, args.key_file),
         Command::Apply(cmd) => match cmd {
             ApplyCommand::Prepare {
                 out,
@@ -550,5 +551,6 @@ fn init_tracing(verbosity: u8) {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(level)),
         )
         .with_target(false)
+        .with_writer(std::io::stderr)
         .try_init();
 }

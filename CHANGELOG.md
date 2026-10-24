@@ -6,6 +6,25 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
+## 0.2.8
+
+### Changed
+
+- **`--config-dir` (or `OC_GUARDIAN_CONFIG_DIR`) applies to every command**,
+  not only `init`, so several guardians on one host each keep their own
+  operator config.
+- **Logs go to stderr**, so a command's stdout is only its output.
+
+### Docs
+
+- The install and build steps take the latest release instead of naming one,
+  and CI refuses a release tag written into them.
+- The quickstart starts the guardian with a setup password.
+- Running the unpacked nix bundle: what `fedimintd --extract` writes, and a
+  wrapper that starts fedimintd through the loader it was built for.
+- Choosing ports below the ephemeral range, and pointing the fedimint client
+  at an Esplora server.
+
 ## 0.2.7
 
 ### Added
