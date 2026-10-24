@@ -54,9 +54,9 @@ enum Command {
     /// Bypass for portal §02 (onboarding · publish).
     Register(RegisterArgs),
 
-    /// Federation discovery + join + leave.
+    /// Federation discovery + join + leave, and a creator's handover.
     /// Bypass for portal §03–§04.
-    #[command(subcommand)]
+    #[command(subcommand, visible_alias = "federation")]
     Federations(FederationsCommand),
 
     /// DKG ceremony coordination.
@@ -186,6 +186,40 @@ enum FederationsCommand {
     },
     /// Coordinate exit from a federation.
     Leave { slug: String },
+    /// Hand a federation you created to another operator.
+    #[command(subcommand)]
+    Handover(HandoverCommand),
+}
+
+#[derive(Subcommand)]
+enum HandoverCommand {
+    /// Offer a federation you created to another operator's key. Upload the
+    /// file at ochk.app/me/operator/federations/<slug>; that operator accepts.
+    Offer {
+        /// The federation's slug.
+        #[arg(long)]
+        federation: String,
+        /// The operator id (op-…) of the key taking the federation on.
+        #[arg(long)]
+        to: String,
+        /// How many days the offer stands, 1 to 30.
+        #[arg(long, default_value_t = oc_guardian_core::commands::HANDOVER_OFFER_DEFAULT_DAYS)]
+        valid_days: u64,
+        #[arg(long, default_value = "creator-handover-offer.json")]
+        out: String,
+    },
+    /// Accept an offer naming your operator key. Upload the file at
+    /// ochk.app/me/operator/handovers; the federation is then yours.
+    Accept {
+        /// The federation's slug.
+        #[arg(long)]
+        federation: String,
+        /// The offer's id (64 hex), as ochk.app/me/operator/handovers shows it.
+        #[arg(long)]
+        offer: String,
+        #[arg(long, default_value = "creator-handover-accept.json")]
+        out: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -454,6 +488,21 @@ fn main() -> Result<()> {
             FederationsCommand::Leave { slug } => {
                 oc_guardian_core::commands::federations_leave(slug)
             }
+            FederationsCommand::Handover(cmd) => match cmd {
+                HandoverCommand::Offer {
+                    federation,
+                    to,
+                    valid_days,
+                    out,
+                } => oc_guardian_core::commands::federation_handover_offer(
+                    federation, to, valid_days, out,
+                ),
+                HandoverCommand::Accept {
+                    federation,
+                    offer,
+                    out,
+                } => oc_guardian_core::commands::federation_handover_accept(federation, offer, out),
+            },
         },
         Command::Ceremony(cmd) => match cmd {
             CeremonyCommand::Start {

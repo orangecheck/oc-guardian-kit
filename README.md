@@ -149,7 +149,7 @@ Every lifecycle stage of the program (application → exit) has a kit command. S
 |---|---|
 | Application | `oc-guardian apply {prepare, verify-acceptance}` |
 | Onboarding | `oc-guardian init`, `oc-guardian register` (checks the registry), `oc-guardian bind` (binds the key to your ochk.app account) |
-| Federations | `oc-guardian federations list` (`join` and `leave` print the steps) |
+| Federations | `oc-guardian federations list` (`join` and `leave` print the steps), `oc-guardian federation handover {offer, accept}` (a creator hands a federation to another operator) |
 | Ceremony | `oc-guardian ceremony {start, add-peer, dkg, status, finalize}` |
 | Charter | `oc-guardian charter {fetch, sign, publish}` |
 | Run | `oc-guardian fedimintd {install, run, status}` |
@@ -161,7 +161,7 @@ Every lifecycle stage of the program (application → exit) has a kit command. S
 
 ## What needs the portal
 
-Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify-status`, `federations list` and `charter {fetch, sign, publish}`. `bind`, `alerts post`, `payouts claim`, `exit-handoff`, `exit-ratify` and `attest-delegate` sign locally and write a file you upload, signed in, on the ochk.app page the kit names (BYPASS.md, "Submitting what the kit signs"). `bind`, `exit-ratify` and `attest-delegate` need a recent bitcoin mainnet block (height and hash, within 6 of the tip). Everything else is local.
+Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify-status`, `federations list` and `charter {fetch, sign, publish}`. `bind`, `alerts post`, `payouts claim`, `exit-handoff`, `exit-ratify`, `attest-delegate` and `federation handover {offer, accept}` sign locally and write a file you upload, signed in, on the ochk.app page the kit names (BYPASS.md, "Submitting what the kit signs"). `bind`, `exit-ratify` and `attest-delegate` need a recent bitcoin mainnet block (height and hash, within 6 of the tip). Everything else is local.
 
 ## Two fedimint behaviours to know
 

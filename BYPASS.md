@@ -26,6 +26,7 @@ Every row here is a portal route the operator might land on, paired with the kit
 | 12 | Graceful exit | Portal coordinates handoff to replacement | `oc-guardian exit-handoff --federation <slug> --replacement <pubkey> --effective-date <date>` — see [§12](#12--graceful-exit) |
 | 13 | Deauthenticate from portal | Portal "delete account" button | `oc-guardian portal forget` clears local state; your guardian is unaffected — see [§13](#13--deauthenticate-from-portal) |
 | 14 | Let a hosted guardian attest | "Let this guardian attest" on the seat's hosted status | `oc-guardian attest-delegate --federation <slug> --seat <n> --attest-pubkey <hex> --block-height <h> --block-hash <hash>` — see [§14](#14--let-a-hosted-guardian-attest) |
+| 15 | Hand a federation to another operator | The handover section of the federation's page | `oc-guardian federation handover offer --federation <slug> --to <op-id>`, then the operator it names runs `… accept` — see [§15](#15--hand-a-federation-to-another-operator) |
 
 ---
 
@@ -285,6 +286,26 @@ Writes `attest-delegation.json`, signed with your operator key, in the shape the
 
 ---
 
+## §15 — Hand a federation to another operator
+
+**Portal path:** the handover section of `ochk.app/me/operator/federations/<slug>`; the operator it names accepts at `ochk.app/me/operator/handovers`.
+
+The creator offers the federation to one operator key, and the operator holding that key accepts it. Each signs with their own operator key. The operator you name must have bound their key to an ochk.app account (§02).
+
+**Bypass:**
+
+```sh
+# The creator. The offer stands 7 days unless --valid-days says otherwise (1 to 30).
+oc-guardian federation handover offer --federation <slug> --to <their op-id>
+
+# The operator it names, with the offer's id from ochk.app/me/operator/handovers.
+oc-guardian federation handover accept --federation <slug> --offer <64-hex offer id>
+```
+
+The offer writes `creator-handover-offer.json`; upload it at `ochk.app/me/operator/federations/<slug>#handover` from the account your key is bound to. The acceptance writes `creator-handover-accept.json`, valid for a day; upload it at `ochk.app/me/operator/handovers` from the account the named key is bound to. A later offer replaces an open one, and an acceptance answers only the offer it names.
+
+---
+
 ## How we test bypass parity
 
 Some of what the kit signs is pinned by a cross-language test, where bytes or a signature made by one side's code are checked by the other's: runtime attestations, settlement receipts, the operator id derived from a key, and attest delegations. The other envelopes (application, charter signature, payout claim, exit and ratification) are checked against the portal's validators by hand, not yet by a shared test.
@@ -311,5 +332,7 @@ Each of these commands signs locally and writes a file. Upload it signed in, on 
 | `oc-guardian exit-handoff` | `exit-handoff.json` | `ochk.app/me/operator/federations/<slug>` |
 | `oc-guardian exit-ratify` | `exit-ratify.json` | `ochk.app/me/operator/federations/<slug>` |
 | `oc-guardian attest-delegate` | `attest-delegation.json` | `ochk.app/me/operator/federations/<slug>` |
+| `oc-guardian federation handover offer` | `creator-handover-offer.json` | `ochk.app/me/operator/federations/<slug>#handover` |
+| `oc-guardian federation handover accept` | `creator-handover-accept.json` | `ochk.app/me/operator/handovers` |
 
 A payouts claim, an exit and an attest delegation are accepted only from the account your key is bound to (§02).

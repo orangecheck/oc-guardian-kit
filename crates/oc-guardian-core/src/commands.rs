@@ -370,12 +370,24 @@ fn build_signed_envelope(
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .context("system clock before epoch")?
-        .as_secs() as i64;
+        .as_secs();
+    sign_envelope_at(signer, action, params, federation, now, 30 * 86_400)
+}
+
+/// Sign an `ActionEnvelope` dated `now_secs` that expires `valid_secs` later.
+fn sign_envelope_at(
+    signer: &dyn Signer,
+    action: ActionType,
+    params: serde_json::Value,
+    federation: Option<String>,
+    now_secs: u64,
+    valid_secs: u64,
+) -> Result<ActionEnvelope> {
     let payload = ActionPayload {
         action,
         params,
-        nonce: now as u64,
-        expires_at: now + 30 * 86_400,
+        nonce: now_secs,
+        expires_at: (now_secs + valid_secs) as i64,
         federation,
     };
     let canon = serde_json::to_vec(&payload).context("serializing action payload")?;
@@ -739,6 +751,7 @@ fn local_envelope_files() -> Result<Vec<std::path::PathBuf>> {
                     "incident",
                     "application",
                     "ceremony",
+                    "handover",
                 ]
                 .iter()
                 .any(|k| name.contains(k));
@@ -1118,6 +1131,123 @@ pub fn bind(did_oc: String, block_height: u64, block_hash: String, out: String) 
     Ok(())
 }
 
+/// How long a handover offer stands unless `--valid-days` says otherwise.
+pub const HANDOVER_OFFER_DEFAULT_DAYS: u64 = 7;
+/// The longest `--valid-days` takes; the portal refuses expiries past 31 days.
+pub const HANDOVER_OFFER_MAX_DAYS: u64 = 30;
+/// An acceptance is uploaded right after it is signed.
+const HANDOVER_ACCEPT_DAYS: u64 = 1;
+
+fn handover_slug(federation: &str) -> Result<&str> {
+    let slug = federation.trim();
+    if slug.is_empty() || !slug.is_ascii() {
+        anyhow::bail!("--federation must be a federation slug");
+    }
+    Ok(slug)
+}
+
+/// The creator's offer of `federation` to the operator key `to`. The portal's
+/// `validateHandoverEnvelope`, field for field.
+fn handover_offer_envelope(
+    signer: &dyn Signer,
+    federation: &str,
+    to: &str,
+    valid_days: u64,
+    now_secs: u64,
+) -> Result<ActionEnvelope> {
+    let slug = handover_slug(federation)?;
+    let me = signer.pubkey().to_id().0;
+    let to = to.trim();
+    if !to.starts_with("op-") || to.len() == 3 {
+        anyhow::bail!("--to must be the operator id (op-…) of the key taking the federation on");
+    }
+    if to == me {
+        anyhow::bail!("--to is your own operator id; name the operator taking the federation on");
+    }
+    if !(1..=HANDOVER_OFFER_MAX_DAYS).contains(&valid_days) {
+        anyhow::bail!("--valid-days must be between 1 and {HANDOVER_OFFER_MAX_DAYS}");
+    }
+    let params = serde_json::json!({
+        "operator_id": me,
+        "federation_slug": slug,
+        "to_operator_id": to,
+        "offered_at": iso8601_utc(now_secs),
+    });
+    sign_envelope_at(
+        signer,
+        ActionType::CreatorHandoverOffer,
+        params,
+        Some(slug.to_string()),
+        now_secs,
+        valid_days * 86_400,
+    )
+}
+
+/// The named operator's acceptance of the offer whose id is `offer_id`.
+fn handover_accept_envelope(
+    signer: &dyn Signer,
+    federation: &str,
+    offer_id: &str,
+    now_secs: u64,
+) -> Result<ActionEnvelope> {
+    let slug = handover_slug(federation)?;
+    let offer_id = hex64(offer_id, "--offer")?;
+    let params = serde_json::json!({
+        "operator_id": signer.pubkey().to_id().0,
+        "federation_slug": slug,
+        "offer_id": offer_id,
+        "accepted_at": iso8601_utc(now_secs),
+    });
+    sign_envelope_at(
+        signer,
+        ActionType::CreatorHandoverAccept,
+        params,
+        Some(slug.to_string()),
+        now_secs,
+        HANDOVER_ACCEPT_DAYS * 86_400,
+    )
+}
+
+/// `oc-guardian federation handover offer` · the creator offers their
+/// federation to another operator key, which accepts it from its own account.
+pub fn federation_handover_offer(
+    federation: String,
+    to: String,
+    valid_days: u64,
+    out: String,
+) -> Result<()> {
+    let (_id, signer) = load_operator()?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock before epoch")?
+        .as_secs();
+    let env = handover_offer_envelope(signer.as_ref(), &federation, &to, valid_days, now)?;
+    let slug = federation.trim();
+    write_envelope(
+        &env,
+        &out,
+        "creator-handover-offer",
+        &format!("https://ochk.app/me/operator/federations/{slug}#handover"),
+    )
+}
+
+/// `oc-guardian federation handover accept` · the operator an offer names
+/// takes the federation on. The offer's id is on ochk.app/me/operator/handovers.
+pub fn federation_handover_accept(federation: String, offer: String, out: String) -> Result<()> {
+    let (_id, signer) = load_operator()?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock before epoch")?
+        .as_secs();
+    let env = handover_accept_envelope(signer.as_ref(), &federation, &offer, now)?;
+    write_envelope(
+        &env,
+        &out,
+        "creator-handover-accept",
+        "https://ochk.app/me/operator/handovers",
+    )
+}
+
 fn exit_ratify_params(
     operator_id: &str,
     federation: &str,
@@ -1299,6 +1429,106 @@ mod tests {
         }
         assert!(sign_bind_claim(&signer, "did:oc:ab12", 1, "zz").is_err());
         assert!(sign_bind_claim(&signer, "did:oc:ab12", 1, &hash).is_ok());
+    }
+
+    /// Write the envelope as the command does, read the file back, and check
+    /// its signature over the payload's bytes under the file's own pubkey.
+    fn written_and_verified(env: &ActionEnvelope, name: &str) -> ActionEnvelope {
+        let path = std::env::temp_dir().join(format!("{name}-{}.json", std::process::id()));
+        let out = path.to_str().unwrap();
+        write_envelope(env, out, name, "https://ochk.app/me/operator").unwrap();
+        let read: ActionEnvelope = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        fs::remove_file(&path).unwrap();
+        let sig: [u8; 64] = hex::decode(&read.sig_hex).unwrap().try_into().unwrap();
+        let bytes = serde_json::to_vec(&read.payload).unwrap();
+        assert!(keychain::verify(&read.pubkey, &bytes, &sig), "{name}");
+        read
+    }
+
+    #[test]
+    fn handover_offer_is_what_the_portal_checks() {
+        let creator = keychain::StaticSigner::from_hex(&"07".repeat(32)).unwrap();
+        let to = keychain::StaticSigner::from_hex(&"08".repeat(32))
+            .unwrap()
+            .pubkey()
+            .to_id()
+            .0;
+        let now = 1_779_408_000;
+        let env = handover_offer_envelope(&creator, " oc-mutiny-v1 ", &to, 7, now).unwrap();
+        let env = written_and_verified(&env, "creator-handover-offer");
+        assert_eq!(env.pubkey, creator.pubkey());
+        assert_eq!(env.payload.action, ActionType::CreatorHandoverOffer);
+        assert_eq!(env.payload.federation.as_deref(), Some("oc-mutiny-v1"));
+        assert_eq!(
+            env.payload.params,
+            serde_json::json!({
+                "operator_id": creator.pubkey().to_id().0,
+                "federation_slug": "oc-mutiny-v1",
+                "to_operator_id": to,
+                "offered_at": "2026-05-22T00:00:00Z",
+            })
+        );
+        assert_eq!(env.payload.nonce, now);
+        assert_eq!(env.payload.expires_at, (now + 7 * 86_400) as i64);
+        let longest = handover_offer_envelope(&creator, "f", &to, 30, now).unwrap();
+        assert_eq!(longest.payload.expires_at, (now + 30 * 86_400) as i64);
+    }
+
+    #[test]
+    fn handover_accept_is_what_the_portal_checks() {
+        let recipient = keychain::StaticSigner::from_hex(&"08".repeat(32)).unwrap();
+        let now = 1_779_408_000 + 13 * 3600 + 45 * 60 + 7;
+        let offer = "AB".repeat(32);
+        let env = handover_accept_envelope(&recipient, "oc-mutiny-v1", &offer, now).unwrap();
+        let env = written_and_verified(&env, "creator-handover-accept");
+        assert_eq!(env.pubkey, recipient.pubkey());
+        assert_eq!(env.payload.action, ActionType::CreatorHandoverAccept);
+        assert_eq!(env.payload.federation.as_deref(), Some("oc-mutiny-v1"));
+        assert_eq!(
+            env.payload.params,
+            serde_json::json!({
+                "operator_id": recipient.pubkey().to_id().0,
+                "federation_slug": "oc-mutiny-v1",
+                "offer_id": "ab".repeat(32),
+                "accepted_at": "2026-05-22T13:45:07Z",
+            })
+        );
+        assert_eq!(env.payload.expires_at, (now + 86_400) as i64);
+    }
+
+    #[test]
+    fn handover_refuses_what_the_portal_would() {
+        let signer = keychain::StaticSigner::from_hex(&"07".repeat(32)).unwrap();
+        let me = signer.pubkey().to_id().0;
+        let to = format!("op-{}", "ab".repeat(16));
+        for (slug, to, days) in [
+            ("", to.as_str(), 7),
+            ("  ", to.as_str(), 7),
+            ("f", "ab12", 7),
+            ("f", "op-", 7),
+            ("f", me.as_str(), 7),
+            ("f", to.as_str(), 0),
+            ("f", to.as_str(), 31),
+        ] {
+            assert!(
+                handover_offer_envelope(&signer, slug, to, days, 0).is_err(),
+                "{slug:?} {to:?} {days}"
+            );
+        }
+        assert!(handover_offer_envelope(&signer, "f", &to, 1, 0).is_ok());
+        let offer = "ab".repeat(32);
+        for (slug, offer) in [
+            ("", offer.clone()),
+            ("f", "ab".repeat(31)),
+            ("f", "zz".repeat(32)),
+            ("f", format!("{offer}00")),
+        ] {
+            assert!(
+                handover_accept_envelope(&signer, slug, &offer, 0).is_err(),
+                "{slug:?} {offer:?}"
+            );
+        }
+        assert!(handover_accept_envelope(&signer, "f", &offer, 0).is_ok());
     }
 
     #[test]

@@ -48,6 +48,10 @@ pub enum ActionType {
     /// originated command is wrapped in this envelope and signed by
     /// the operator before the kit applies it).
     BridgeCommand,
+    /// A federation's creator offers it to another operator key.
+    CreatorHandoverOffer,
+    /// The operator an offer names takes the federation on.
+    CreatorHandoverAccept,
 }
 
 /// Outer envelope. Receivers verify `sig_hex` against `pubkey` over
@@ -333,6 +337,23 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&ActionType::BridgeCommand).unwrap(),
             "\"bridge-command\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ActionType::CreatorHandoverOffer).unwrap(),
+            "\"creator-handover-offer\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ActionType::CreatorHandoverAccept).unwrap(),
+            "\"creator-handover-accept\""
+        );
+        // And the server's spelling parses back to the same variant.
+        assert_eq!(
+            serde_json::from_str::<ActionType>("\"creator-handover-offer\"").unwrap(),
+            ActionType::CreatorHandoverOffer
+        );
+        assert_eq!(
+            serde_json::from_str::<ActionType>("\"creator-handover-accept\"").unwrap(),
+            ActionType::CreatorHandoverAccept
         );
     }
 

@@ -6,6 +6,17 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
+## 0.2.10
+
+### Added
+
+- **A federation's creator can hand it to another operator.**
+  `oc-guardian federation handover offer --federation <slug> --to <op-id>`
+  signs the offer, which stands 7 days (`--valid-days`, 1 to 30). The
+  operator it names signs `federation handover accept --federation <slug>
+  --offer <offer id>`. Each file names the ochk.app page that takes it.
+  `federations` also answers to `federation`.
+
 ## 0.2.9
 
 ### Added
