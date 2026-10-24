@@ -114,6 +114,8 @@ LD=$S/$(grep -aom1 '/nix/store/[a-z0-9]*-glibc-[^/]*/lib/ld-linux[a-z0-9_.-]*' "
 exec "$LD" --library-path "$(dirname "$LD"):$(ls -d "$S"/*/lib | tr '\n' ':')" "$BIN" "$@"
 ```
 
+[oc-onboarding-examples](https://github.com/orangecheck/oc-onboarding-examples/blob/main/guardian/bundle_wrapper.py) has the same wrapper in Python, reading the loader from the ELF headers.
+
 ## The DKG ceremony
 
 fedimintd 0.11 sets a federation up in four steps. The kit takes them through the setup API on the same machine, so the guardian password never crosses the network. The password comes from `--password-file` or `FM_PASSWORD`.
