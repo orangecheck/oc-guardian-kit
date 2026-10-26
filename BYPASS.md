@@ -27,6 +27,7 @@ Every row here is a portal route the operator might land on, paired with the kit
 | 13 | Deauthenticate from portal | Portal "delete account" button | `oc-guardian portal forget` clears local state; your guardian is unaffected — see [§13](#13--deauthenticate-from-portal) |
 | 14 | Let a hosted guardian attest | "Let this guardian attest" on the seat's hosted status | `oc-guardian attest-delegate --federation <slug> --seat <n> --attest-pubkey <hex> --block-height <h> --block-hash <hash>` — see [§14](#14--let-a-hosted-guardian-attest) |
 | 15 | Hand a federation to another operator | The handover section of the federation's page | `oc-guardian federation handover offer --federation <slug> --to <op-id>`, then the operator it names runs `… accept` — see [§15](#15--hand-a-federation-to-another-operator) |
+| 16 | Name a successor federation | None: guardians submit meta themselves | `oc-guardian meta successor --invite <fed1…> --expires <date> --message <text> --current <file>` — see [§16](#16--name-a-successor-federation) |
 
 ---
 
@@ -303,6 +304,26 @@ oc-guardian federation handover accept --federation <slug> --offer <64-hex offer
 ```
 
 The offer writes `creator-handover-offer.json`; upload it at `ochk.app/me/operator/federations/<slug>#handover` from the account your key is bound to. The acceptance writes `creator-handover-accept.json`, valid for a day; upload it at `ochk.app/me/operator/handovers` from the account the named key is bound to. A later offer replaces an open one, and an acceptance answers only the offer it names.
+
+---
+
+## §16 — Name a successor federation
+
+**Portal path:** none. Fedimint publishes meta only when the guardians submit it themselves.
+
+When a federation moves to a successor (a guardian set cannot change after the key ceremony), its guardians publish where users should go, by when, and what happens to anything left. Fedimint's meta module adopts an object once a threshold of guardians has submitted the same bytes, so each guardian prints it with the same inputs and submits it unchanged:
+
+```sh
+fedimint-cli module meta get > current-meta.json
+oc-guardian meta successor \
+    --invite <successor fed1… invite> \
+    --expires 2026-12-31 \
+    --message "Funds moved to <successor>. Anything left here after 2026-12-31 is lost." \
+    --current current-meta.json
+fedimint-cli --our-id <your peer id> --password <admin password> module meta submit '<the line it printed>'
+```
+
+`--expires` takes Unix seconds or a date (midnight UTC). The other fields the federation publishes are kept.
 
 ---
 

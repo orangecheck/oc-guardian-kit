@@ -158,6 +158,7 @@ Every lifecycle stage of the program (application → exit) has a kit command. S
 | Payouts | `oc-guardian payouts claim <slug> --to <lightning-address>` |
 | Exit | `oc-guardian exit-handoff`, `oc-guardian exit-ratify` |
 | Hosted attestations | `oc-guardian attest-delegate` |
+| Successor notice | `oc-guardian meta successor` (the meta every guardian submits when the federation moves to a successor) |
 
 ## What needs the portal
 

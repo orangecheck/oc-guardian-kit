@@ -21,6 +21,7 @@ pub mod ceremony;
 pub mod config;
 pub mod gate;
 pub mod install;
+pub mod meta;
 pub mod run;
 pub mod settlement;
 pub mod status;

@@ -6,6 +6,18 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
+## Unreleased
+
+### Added
+
+- **`oc-guardian meta successor`** prints the meta object that names a
+  successor federation: `federation_successor` (its invite),
+  `federation_expiry_timestamp` and `welcome_message`, merged into the meta the
+  federation publishes now (`--current`, as `fedimint-cli module meta get`
+  prints it). Keys are sorted and there is no whitespace, so every guardian who
+  runs it with the same inputs submits the same bytes, which the meta module
+  needs from a threshold before it adopts them.
+
 ## 0.2.10
 
 ### Added

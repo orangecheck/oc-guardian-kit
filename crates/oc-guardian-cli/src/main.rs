@@ -74,6 +74,10 @@ enum Command {
     #[command(subcommand)]
     Fedimintd(FedimintdCommand),
 
+    /// The federation's published meta fields.
+    #[command(subcommand)]
+    Meta(MetaCommand),
+
     /// Show this guardian's operational status.
     /// Bypass for portal §08 (status).
     Status,
@@ -296,6 +300,28 @@ enum CharterCommand {
         file: String,
         #[arg(long, default_value = "https")]
         transport: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum MetaCommand {
+    /// Print the meta object that names a successor federation, for every
+    /// guardian to submit unchanged (`fedimint-cli … module meta submit`).
+    /// It becomes the federation's meta once a threshold submits the same bytes.
+    Successor {
+        /// The successor federation's invite code (`fed1…`).
+        #[arg(long)]
+        invite: String,
+        /// When this federation stops: Unix seconds, or a date YYYY-MM-DD (UTC).
+        #[arg(long)]
+        expires: String,
+        /// Where the funds went and what happens to anything left.
+        #[arg(long)]
+        message: String,
+        /// The meta it publishes now, as `fedimint-cli module meta get` prints
+        /// it (a file, or `-` for stdin). Its other fields are kept.
+        #[arg(long)]
+        current: Option<String>,
     },
 }
 
@@ -544,6 +570,14 @@ fn main() -> Result<()> {
                 allow_public_setup,
             } => oc_guardian_fedimint::run(config, allow_public_setup),
             FedimintdCommand::Status { config } => oc_guardian_fedimint::status(config),
+        },
+        Command::Meta(cmd) => match cmd {
+            MetaCommand::Successor {
+                invite,
+                expires,
+                message,
+                current,
+            } => oc_guardian_fedimint::meta::successor(invite, expires, message, current),
         },
         Command::Status => oc_guardian_core::commands::status(),
         Command::Alerts(cmd) => match cmd {
