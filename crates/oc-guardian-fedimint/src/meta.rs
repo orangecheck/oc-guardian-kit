@@ -57,7 +57,8 @@ pub fn successor(
     eprintln!(
         "Each guardian submits this line unchanged, byte for byte; it becomes the \
          federation's meta once a threshold has:\n  fedimint-cli --our-id <your peer id> \
-         --password <admin password> module meta submit '<the line above>'"
+         --password <admin password> module meta submit {}",
+        shell_quote(&object)
     );
     Ok(())
 }
@@ -112,6 +113,11 @@ fn current_object(text: &str) -> Result<serde_json::Map<String, Value>> {
         Value::Object(o) => Ok(o),
         _ => bail!("the current meta is not a JSON object"),
     }
+}
+
+/// One POSIX shell word, so a message with an apostrophe survives being pasted.
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 /// Keys sorted at every level and no whitespace, whatever order the input had.
@@ -369,6 +375,22 @@ mod tests {
     }
 
     #[test]
+    fn a_bare_object_with_a_value_key_is_not_unwrapped() {
+        let bare = r#"{"value":"kept","federation_name":"v1"}"#;
+        let out = successor_meta(Some(bare), &notice(), NOW).unwrap();
+        assert!(
+            out.contains(r#""value":"kept""#) && out.contains(r#""federation_name":"v1""#),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn the_printed_command_quotes_an_apostrophe() {
+        assert_eq!(shell_quote("it's"), r#"'it'\''s'"#);
+        assert_eq!(shell_quote("{}"), "'{}'");
+    }
+
+    #[test]
     fn an_earlier_notice_is_replaced() {
         let old = r#"{"federation_successor":"fed1old","welcome_message":"old"}"#;
         let out = successor_meta(Some(old), &notice(), NOW).unwrap();
@@ -421,6 +443,8 @@ mod tests {
         assert_eq!(parse_expiry("2026-11-25").unwrap(), 1_795_564_800);
         assert_eq!(parse_expiry("2028-02-29").unwrap(), 1_835_395_200);
         for bad in [
+            "1969-12-31",
+            "2026-11-00",
             "2027-02-29",
             "2026-13-01",
             "2026-1-01",
