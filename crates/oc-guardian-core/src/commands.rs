@@ -141,6 +141,22 @@ pub fn init(hsm: String, key_file: Option<String>) -> Result<()> {
     Ok(())
 }
 
+/// The signed params of an application: who applies, and the questionnaire's hash and size,
+/// never where the file sits on this machine.
+fn application_params(
+    operator_id: &str,
+    q_sha256_hex: &str,
+    q_bytes: usize,
+    now_secs: i64,
+) -> serde_json::Value {
+    serde_json::json!({
+        "operator_id": operator_id,
+        "questionnaire_sha256": q_sha256_hex,
+        "questionnaire_bytes": q_bytes,
+        "submitted_at_unix": now_secs,
+    })
+}
+
 /// Produce a signed application envelope from the operator's filled-out
 /// questionnaire. Output is a JSON file the operator attaches to the
 /// email to apply@ochk.io. Bypass for portal §01 (apply).
@@ -165,10 +181,8 @@ pub fn apply_prepare(out: String, questionnaire: Option<String>, _hsm: String) -
     })?;
     let pubkey: OperatorPubKey = signer.pubkey();
 
-    // 3. Build the payload. ApplicationApply payloads carry the
-    //    questionnaire hash + a small subset of the questionnaire as
-    //    params; the OC reviewer reads the full questionnaire from
-    //    the email attachment and hashes it locally to verify the
+    // 3. Build the payload. The OC reviewer reads the full questionnaire
+    //    from the email attachment and hashes it locally to verify the
     //    signed-over hash matches.
     let now_secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -176,13 +190,7 @@ pub fn apply_prepare(out: String, questionnaire: Option<String>, _hsm: String) -
         .as_secs() as i64;
     let payload = ActionPayload {
         action: ActionType::ProgramApply,
-        params: serde_json::json!({
-            "operator_id": id.0,
-            "questionnaire_path": q_path,
-            "questionnaire_sha256": q_hash_hex,
-            "questionnaire_bytes": q_bytes.len(),
-            "submitted_at_unix": now_secs,
-        }),
+        params: application_params(&id.0, &q_hash_hex, q_bytes.len(), now_secs),
         nonce: 1,                           // first action under this identity
         expires_at: now_secs + 30 * 86_400, // 30 days
         federation: None,                   // program-level, not federation-scoped
@@ -1347,6 +1355,22 @@ pub fn verify_status() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_application_signs_the_questionnaire_hash_and_size_and_no_local_path() {
+        let p = application_params("op-1", &"ab".repeat(32), 1234, 0);
+        let keys: Vec<&str> = p.as_object().unwrap().keys().map(String::as_str).collect();
+        assert_eq!(
+            keys,
+            [
+                "operator_id",
+                "questionnaire_bytes",
+                "questionnaire_sha256",
+                "submitted_at_unix"
+            ]
+        );
+        assert_eq!(p["questionnaire_bytes"], 1234);
+    }
 
     #[test]
     fn payouts_claim_carries_signed_at_and_a_lightning_destination() {
