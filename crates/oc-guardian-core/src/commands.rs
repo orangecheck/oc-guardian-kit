@@ -1358,18 +1358,16 @@ mod tests {
 
     #[test]
     fn an_application_signs_the_questionnaire_hash_and_size_and_no_local_path() {
-        let p = application_params("op-1", &"ab".repeat(32), 1234, 0);
-        let keys: Vec<&str> = p.as_object().unwrap().keys().map(String::as_str).collect();
+        let p = application_params("op-1", &"ab".repeat(32), 1234, 1_700_000_000);
         assert_eq!(
-            keys,
-            [
-                "operator_id",
-                "questionnaire_bytes",
-                "questionnaire_sha256",
-                "submitted_at_unix"
-            ]
+            p,
+            serde_json::json!({
+                "operator_id": "op-1",
+                "questionnaire_sha256": "ab".repeat(32),
+                "questionnaire_bytes": 1234,
+                "submitted_at_unix": 1_700_000_000,
+            })
         );
-        assert_eq!(p["questionnaire_bytes"], 1234);
     }
 
     #[test]
