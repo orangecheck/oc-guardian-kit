@@ -68,7 +68,7 @@ Not built: no kit command runs these steps yet, and there are no test vectors. `
 
 ## Portal-published charters
 
-The portal publishes the charter of `oc-me-v1` and of every self-serve federation as a plain-text block of `key: value` lines, the charter's "canonical bytes". Its hash is the SHA-256 of those exact UTF-8 bytes: newlines LF, one trailing newline, nothing parsed or normalized. `oc-me-v1`'s blocks are on its charter page, [docs.ochk.io/federation/oc-me-v1](https://docs.ochk.io/federation/oc-me-v1); a self-serve federation's block is built from its federation row, so anyone can rebuild it.
+The portal publishes the charter of `oc-me-v1` and of every self-serve federation as a plain-text block of `key: value` lines, the charter's "canonical bytes". Its hash is the SHA-256 of those exact UTF-8 bytes: newlines LF, one trailing newline, nothing parsed or normalized. The portal serves each charter's exact text as `meta.canonical_text` in `GET /api/operator/charter`, and each superseded version's under `meta.superseded`. `oc-me-v1`'s blocks are also on its charter page, [docs.ochk.io/federation/oc-me-v1](https://docs.ochk.io/federation/oc-me-v1). A self-serve charter stored before 2026-10-31 serves no text, so its hash cannot be checked until its roster next changes.
 
 `GET /api/operator/charter?federation=<slug>` serves the current version (`meta.charter_version`, `meta.charter_hash`) and every signature recorded for the federation, each marked `matches_current_charter`. The portal refuses a signature over any hash but the current one, and only a seated guardian's signature over the current hash, with its signed text kept, counts toward ratification.
 
@@ -80,8 +80,8 @@ Each signature that `GET /api/operator/charter` returns carries `signed_message`
 
 1. Verify `sig_hex` with Ed25519 over the bytes of `signed_message`, under `operator_pubkey`.
 2. Parse `signed_message`: `action` is `charter-sign`, and `params.charter_hash`, `params.federation_slug` and `params.operator_id` equal the row's.
-3. Check that hash is the SHA-256 of the canonical bytes you rebuilt.
-4. Check that `operator_pubkey` holds a seat on the federation's roster at `/api/public/federations/<slug>`, whose seat claim verifies over its block hash: the row's key comes from the same server as the signature.
+3. Check that hash is the SHA-256 of the UTF-8 bytes of `meta.canonical_text`, and read the charter you are checking in that text.
+4. Check that `operator_pubkey` holds a seat on the federation's roster at `/api/public/federations/<slug>`, whose seat claim verifies over its block hash and names this federation's slug and that seat's index: the row's key comes from the same server as the signature.
 
 A row recorded before the portal kept that text reads `offline_verifiable: false` with an `offline_note`. It cannot be checked offline, and it does not count toward ratification.
 
@@ -96,7 +96,7 @@ block_height: <height>
 block_hash: <hash hex>
 ```
 
-Verify `sig` with Ed25519 over those bytes under the seat's `operator_pubkey`, which must equal the signature row's, and confirm that `block_hash` is the hash of the Bitcoin block at `block_height`. A seat with no `seat_claim` leaves its key unproven, so step 4 cannot pass for it. As of 2026-10-31, neither `oc-me-v1` nor `oc-testnet-v1` lists any seat, so no signature can pass step 4 yet.
+Verify `sig` with Ed25519 over those bytes under the seat's `operator_pubkey`, which must equal the signature row's. The claim's `federation_slug` must be this federation's slug and its `seat_index` that seat's index, or a claim made for another federation or seat with the same key would pass. Confirm that `block_hash` is the hash of the Bitcoin block at `block_height`. A seat with no `seat_claim` leaves its key unproven, so step 4 cannot pass for it. As of 2026-10-31, neither `oc-me-v1` nor `oc-testnet-v1` lists any seat, so no signature can pass step 4 yet.
 
 ## Required sections (per the program's §1 properties)
 
