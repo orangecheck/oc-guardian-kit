@@ -188,7 +188,7 @@ That key signs liveness and nothing else: not the charter, a payout claim, an ex
 
 - [`BYPASS.md`](./BYPASS.md) — every portal feature and its kit-only equivalent.
 - [`SECURITY.md`](./SECURITY.md) — threat model, key handling, what orangecheck sees and doesn't.
-- [`CHARTER-FORMAT.md`](./CHARTER-FORMAT.md) — canonical charter document spec (RFC 8785 JSON).
+- [`CHARTER-FORMAT.md`](./CHARTER-FORMAT.md) — charter document spec: the plain-text form the portal publishes, and the RFC 8785 form (not built).
 - [Source](https://github.com/orangecheck/oc-guardian-kit) — open source, MIT.
 - [Releases](https://github.com/orangecheck/oc-guardian-kit/releases) — signed; verified via cosign + SLSA.
 

@@ -4,6 +4,8 @@ The charter is the human-readable + machine-checkable contract a federation publ
 
 This file specifies the **canonical form** of the charter — the exact bytes that get hashed when an operator signs.
 
+> **What the kit does today.** `oc-guardian charter fetch <slug>` prints the charter the portal publishes, and `oc-guardian charter sign <slug>` signs the hash the portal serves (`crates/oc-guardian-charter`). Every charter in the OC operator program so far is portal-published, in the plain-text form under [Portal-published charters](#portal-published-charters). The Markdown + YAML form below, with its RFC 8785 canonicalization, `charter validate` and test vectors, is specified here but not built.
+
 ## File layout
 
 A charter is a single Markdown file with a YAML frontmatter header. The frontmatter contains the structured metadata; the body is the prose contract.
@@ -12,31 +14,31 @@ A charter is a single Markdown file with a YAML frontmatter header. The frontmat
 ---
 charter_version: 1
 federation_id: 7c9f3a2e...
-federation_name: BitSacco Sokoni
+federation_name: Example Riverside Federation
 ratified_at: 2026-05-15T12:00:00Z
 threshold:
   m: 3
   n: 4
 guardians:
   - operator_id: op-3f7a8b2e
-    legal_entity: BitSacco Cooperative Society Ltd
+    legal_entity: Example Guardian One Ltd
     jurisdiction: KE
-    api_endpoint: https://guard-1.bitsacco.example/api
-    contact: security@bitsacco.example
+    api_endpoint: https://guard-1.example.org/api
+    contact: security@example.org
     pgp_fingerprint: 2A4F 1B3D 5E7C 9A0F 1234 5678 ABCD EF01 23 45 6789
   - operator_id: op-9c2d1e4f
-    legal_entity: Foo Bar Corp
+    legal_entity: Example Guardian Two Inc
     jurisdiction: US-NY
     api_endpoint: https://guard-2.example.com/api
     contact: ops@example.com
     pgp_fingerprint: 1C3E 5F7A 8B0D 2F4E 1234 5678 ABCD EF01 23 45 6789
   # ... 4 entries for a 3-of-4 federation
 gateways:
-  - operator: Lightning Lab Inc
+  - operator: Example Gateway Co
     api_endpoint: https://ln-gateway.example.com
     fee_schedule_url: https://ln-gateway.example.com/.well-known/oc-fee-schedule
 exit_clause:
-  on_federation_sunset: "every user can withdraw on-chain via threshold-signed transaction without OC services"
+  on_federation_sunset: "90 days' notice; users holding ecash in their own Fedimint client redeem it to Lightning or on-chain before shutdown"
   on_charter_amendment: "30-day notice + supermajority of guardians sign the new revision; old charter remains valid for in-flight deposits"
 amendment_process:
   who_can_propose: "any guardian or affiliate"
@@ -44,7 +46,7 @@ amendment_process:
   notice_period_days: 30
 ---
 
-# BitSacco Sokoni · Federation Charter
+# Example Riverside Federation · Federation Charter
 
 [prose body — guardian disclosures, custody promise, SLA commitments,
 dispute resolution, etc.]
@@ -62,7 +64,15 @@ The charter hash is computed over **canonical bytes**, not the raw file:
 
 The hex-encoded SHA-256 is the charter's hash. Operators sign this hash with their hardware key; consumers verify against it.
 
-The kit's `oc-guardian charter sign` runs steps 1–5 internally; operators don't need to handle canonicalization manually. Other tools that produce charter signatures must produce byte-identical canonical bytes — see `crates/oc-guardian-charter/tests/canon-vectors.json` for test vectors.
+Not built: no kit command runs these steps yet, and there are no test vectors. `oc-guardian charter sign` signs the hash the portal serves.
+
+## Portal-published charters
+
+The portal publishes the charter of `oc-me-v1` and of every self-serve federation as a plain-text block of `key: value` lines, the charter's "canonical bytes". Its hash is the SHA-256 of those exact UTF-8 bytes: newlines LF, one trailing newline, nothing parsed or normalized. `oc-me-v1`'s blocks are on its charter page, [docs.ochk.io/federation/oc-me-v1](https://docs.ochk.io/federation/oc-me-v1); a self-serve federation's block is built from its federation row, so anyone can rebuild it.
+
+`GET /api/operator/charter?federation=<slug>` serves the current version (`meta.charter_version`, `meta.charter_hash`) and every signature recorded for the federation, each marked `matches_current_charter`. The portal refuses a signature over any hash but the current one, and only a seated guardian's signature over the current hash counts toward ratification.
+
+A new version is a new hash. The versions it replaced stay listed under `meta.superseded`, each with its `charter_version`, `charter_hash`, `superseded_at` and `reason`. A signature over a superseded hash is kept as history and never counts, so every guardian signs the new version. `oc-me-v1` v1.0.0 (hash `58f5ac78…d4e8`) is superseded by v1.1.0: its exit clause, on-chain withdrawal by a threshold-signed transaction, describes a path that was never built.
 
 ## Required sections (per the program's §1 properties)
 
@@ -75,15 +85,15 @@ A charter must include these sections to be acceptable for the OC operator progr
 | Guardian disclosures (entity, jurisdiction, contact, fingerprint) | ✓ per guardian | + per-guardian short bio |
 | OC's role | — | "OC the company is a client of this federation, not a guardian" — verbatim or equivalent |
 | Lightning gateway disclosure | ✓ per gateway | + fee schedule reference |
-| Exit clause (sunset, amendment) | ✓ | + prose explanation |
+| Exit clause (sunset, amendment) | ✓ | + prose explanation; it states the exit that is built and working for this federation's users, not a planned one |
 | Dispute resolution | — | how a user files a complaint, who responds, escalation path |
 | Amendment process | ✓ | + ratification flow |
 
-Missing required sections cause the kit's `charter validate` to fail; operators should not sign such charters.
+Operators should not sign a charter missing a required section.
 
 ## Required §1 property checks
 
-The kit also runs the §1 property checks from `oc-me-web/FEDERATION-DEPLOYMENT.md` against the charter:
+These are the §1 property checks from `oc-me-web/FEDERATION-DEPLOYMENT.md` a charter must pass. Not built: no kit command runs them yet.
 
 - §1.1 Guardian count ≥ 4.
 - §1.2 Threshold strictly > N/2.
@@ -92,11 +102,11 @@ The kit also runs the §1 property checks from `oc-me-web/FEDERATION-DEPLOYMENT.
 - §1.6 No `*.ochk.io` in `guardians[].api_endpoint`.
 - §1.7 Exit clause present.
 
-`oc-guardian charter validate <file>` reports each property's pass/fail/manual-review status. Operators should not sign charters with failing properties.
+Operators should not sign a charter that fails one.
 
 ## Test vectors
 
-`crates/oc-guardian-charter/tests/charter-vectors/` ships:
+Not built. Planned for `crates/oc-guardian-charter/tests/charter-vectors/`:
 
 - `valid-3of4.md` — fully compliant charter.
 - `valid-4of7.md` — larger federation, multiple jurisdictions.
@@ -104,8 +114,8 @@ The kit also runs the §1 property checks from `oc-me-web/FEDERATION-DEPLOYMENT.
 - `invalid-2of4.md` — rejected at §1.2 (threshold not strictly > N/2).
 - `invalid-oc-guardian.md` — rejected at §1.6 (`*.ochk.io` listed as guardian).
 
-Each vector ships with its expected canonical bytes + SHA-256 hash for cross-implementation verification.
+Each vector would ship with its expected canonical bytes + SHA-256 hash for cross-implementation verification.
 
 ## Versioning
 
-`charter_version` is monotonic. v1 is described above. v2+ revisions document changes here and ship migration notes; v1 charters remain valid for in-flight deposits per the standard amendment process.
+`charter_version` is monotonic. v1 is described above. v2+ revisions document changes here and ship migration notes. For a portal-published charter, a new version is a new hash, and the old one moves to `meta.superseded` (see [Portal-published charters](#portal-published-charters)).
