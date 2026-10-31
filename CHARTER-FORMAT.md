@@ -70,9 +70,20 @@ Not built: no kit command runs these steps yet, and there are no test vectors. `
 
 The portal publishes the charter of `oc-me-v1` and of every self-serve federation as a plain-text block of `key: value` lines, the charter's "canonical bytes". Its hash is the SHA-256 of those exact UTF-8 bytes: newlines LF, one trailing newline, nothing parsed or normalized. `oc-me-v1`'s blocks are on its charter page, [docs.ochk.io/federation/oc-me-v1](https://docs.ochk.io/federation/oc-me-v1); a self-serve federation's block is built from its federation row, so anyone can rebuild it.
 
-`GET /api/operator/charter?federation=<slug>` serves the current version (`meta.charter_version`, `meta.charter_hash`) and every signature recorded for the federation, each marked `matches_current_charter`. The portal refuses a signature over any hash but the current one, and only a seated guardian's signature over the current hash counts toward ratification.
+`GET /api/operator/charter?federation=<slug>` serves the current version (`meta.charter_version`, `meta.charter_hash`) and every signature recorded for the federation, each marked `matches_current_charter`. The portal refuses a signature over any hash but the current one, and only a seated guardian's signature over the current hash, with its signed text kept, counts toward ratification.
 
 A new version is a new hash. The versions it replaced stay listed under `meta.superseded`, each with its `charter_version`, `charter_hash`, `superseded_at` and `reason`. A signature over a superseded hash is kept as history and never counts, so every guardian signs the new version. `oc-me-v1` v1.0.0 (hash `58f5ac78…d4e8`) is superseded by v1.1.0: its exit clause, on-chain withdrawal by a threshold-signed transaction, describes a path that was never built.
+
+### Checking a signature offline
+
+Each signature that `GET /api/operator/charter` returns carries `signed_message`, the exact UTF-8 text its `sig_hex` signs: the JSON of `{action, params, nonce, expires_at, federation}` as the portal verified it. To check one with nothing but that response:
+
+1. Verify `sig_hex` with Ed25519 over the bytes of `signed_message`, under `operator_pubkey`.
+2. Parse `signed_message`: `action` is `charter-sign`, and `params.charter_hash`, `params.federation_slug` and `params.operator_id` equal the row's.
+3. Check that hash is the SHA-256 of the canonical bytes you rebuilt.
+4. Check that `operator_pubkey` holds a seat on the federation's roster at `/api/public/federations/<slug>`, whose seat claim verifies over its block hash: the row's key comes from the same server as the signature.
+
+A row recorded before the portal kept that text reads `offline_verifiable: false` with an `offline_note`. It cannot be checked offline, and it does not count toward ratification.
 
 ## Required sections (per the program's §1 properties)
 
