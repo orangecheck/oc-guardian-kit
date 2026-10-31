@@ -85,6 +85,19 @@ Each signature that `GET /api/operator/charter` returns carries `signed_message`
 
 A row recorded before the portal kept that text reads `offline_verifiable: false` with an `offline_note`. It cannot be checked offline, and it does not count toward ratification.
 
+Step 4 in full. A seat's `seat_claim` (`federation_slug`, `seat_index`, `operator_pubkey`, `block_height`, `block_hash`, `sig`) signs these six lines, joined by LF with no trailing newline, where `<length>` is the slug's length in characters:
+
+```
+oc-me/seat-claim/v1
+federation_slug: <length>:<slug>
+seat_index: <index>
+operator_pubkey: <pubkey hex>
+block_height: <height>
+block_hash: <hash hex>
+```
+
+Verify `sig` with Ed25519 over those bytes under the seat's `operator_pubkey`, which must equal the signature row's, and confirm that `block_hash` is the hash of the Bitcoin block at `block_height`. A seat with no `seat_claim` leaves its key unproven, so step 4 cannot pass for it. As of 2026-10-31, neither `oc-me-v1` nor `oc-testnet-v1` lists any seat, so no signature can pass step 4 yet.
+
 ## Required sections (per the program's §1 properties)
 
 A charter must include these sections to be acceptable for the OC operator program:
