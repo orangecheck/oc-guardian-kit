@@ -149,7 +149,7 @@ DKG runs guardian to guardian over the P2P port. **Run `ceremony start` as soon 
 **Bypass:**
 
 ```sh
-# Review what you would commit to: hash, version, canonical URL, ratifications.
+# Review what you would commit to: hash, version, canonical URL, signatures recorded.
 oc-guardian charter fetch <federation-slug>
 
 # Sign it with your operator key.

@@ -2,7 +2,8 @@
 //!
 //! The charter is the artifact a federation publishes disclosing its
 //! guardians, threshold, operational commitments, and exit clause.
-//! Operators sign the charter's SHA-256 to ratify their guardian seat.
+//! Operators sign an envelope naming the charter's SHA-256 to ratify
+//! their guardian seat.
 //! Consumers verify the charter against its hash before depositing
 //! into the federation.
 //!
@@ -47,12 +48,7 @@ pub fn fetch(slug: String) -> Result<()> {
     let resp: CharterFetchResponse = client
         .get_json(&path)
         .with_context(|| format!("fetching charter meta for federation {slug}"))?;
-    println!("federation : {}", resp.meta.federation_slug);
-    println!("version    : {}", resp.meta.charter_version);
-    println!("hash       : {}", resp.meta.charter_hash);
-    println!("canonical  : {}", resp.meta.charter_url);
-    println!("published  : {}", resp.meta.published_at);
-    println!("ratifications: {}", resp.signatures.len());
+    print!("{}", fetch_summary(&resp));
     if resp.meta.charter_version.contains("placeholder")
         || resp.meta.charter_version.contains("pending")
     {
@@ -65,6 +61,24 @@ pub fn fetch(slug: String) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// What `charter fetch` prints. The count is every signature the portal has
+/// recorded for the federation, superseded versions included, so it is not a
+/// ratification count.
+fn fetch_summary(resp: &CharterFetchResponse) -> String {
+    let m = &resp.meta;
+    let mut out = [
+        format!("federation : {}", m.federation_slug),
+        format!("version    : {}", m.charter_version),
+        format!("hash       : {}", m.charter_hash),
+        format!("canonical  : {}", m.charter_url),
+        format!("published  : {}", m.published_at),
+        format!("signatures recorded: {}", resp.signatures.len()),
+    ]
+    .join("\n");
+    out.push('\n');
+    out
 }
 
 /// `oc-guardian charter sign <slug> --out <path>` · fetch the
@@ -301,6 +315,40 @@ fn is_leap_year(y: i64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fetch_summary_counts_signatures_recorded_not_ratifications() {
+        let resp = CharterFetchResponse {
+            ok: true,
+            meta: oc_guardian_core::portal_client::CharterMeta {
+                federation_slug: "oc-me-v1".into(),
+                charter_hash: "5fcb".into(),
+                charter_version: "v1.1.0".into(),
+                charter_url: "https://ochk.io/docs/federation/oc-me-v1".into(),
+                published_at: "2026-10-31T00:00:00.000Z".into(),
+            },
+            // One signature over a superseded version: recorded, not a ratification.
+            signatures: vec![oc_guardian_core::portal_client::CharterSignature {
+                federation_slug: "oc-me-v1".into(),
+                operator_id: "op-cf6d365829055b25".into(),
+                operator_pubkey: "ab".repeat(32),
+                charter_hash: "58f5".into(),
+                charter_version: "v1.0.0".into(),
+                signed_at: "2026-05-21T04:53:53.042Z".into(),
+                sig_hex: "cd".repeat(64),
+                received_at: "2026-05-21T04:53:53.042Z".into(),
+            }],
+        };
+        assert_eq!(
+            fetch_summary(&resp),
+            "federation : oc-me-v1\n\
+             version    : v1.1.0\n\
+             hash       : 5fcb\n\
+             canonical  : https://ochk.io/docs/federation/oc-me-v1\n\
+             published  : 2026-10-31T00:00:00.000Z\n\
+             signatures recorded: 1\n"
+        );
+    }
 
     #[test]
     fn url_encode_alpha_numeric_passthrough() {
