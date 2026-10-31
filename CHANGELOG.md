@@ -8,6 +8,16 @@ surface (CLI flags, action-envelope schemas, file paths under
 
 ## Unreleased
 
+### Fixed
+
+- **`oc-guardian charter fetch` and `charter sign` read a federation with no
+  charter.** me.ochk.io answers `meta: null` for one since oc-me-web c8a255c1,
+  where it used to send a "v0-pending" stand-in carrying oc-me-v1's hash. The
+  kit failed to parse that reply. Now `fetch` prints `no charter published for
+  <slug>` and `sign` refuses with the same words. A reply with no `meta` field
+  at all is still an error. `CharterFetchResponse.meta` is an
+  `Option<CharterMeta>`.
+
 ### Added
 
 - **`oc-guardian meta successor`** prints the meta object that names a

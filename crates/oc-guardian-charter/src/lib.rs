@@ -30,7 +30,7 @@ use anyhow::{anyhow, Context, Result};
 use oc_guardian_core::actions::{ActionEnvelope, ActionPayload, ActionType};
 use oc_guardian_core::config::{read_id, resolve_dir};
 use oc_guardian_core::keychain;
-use oc_guardian_core::portal_client::{CharterFetchResponse, PortalClient};
+use oc_guardian_core::portal_client::{CharterFetchResponse, CharterMeta, PortalClient};
 use tracing::{info, warn};
 
 /// Replay-protection horizon for charter-sign envelopes. The portal
@@ -48,17 +48,11 @@ pub fn fetch(slug: String) -> Result<()> {
     let resp: CharterFetchResponse = client
         .get_json(&path)
         .with_context(|| format!("fetching charter meta for federation {slug}"))?;
-    print!("{}", fetch_summary(&resp));
-    if resp.meta.charter_version.contains("placeholder")
-        || resp.meta.charter_version.contains("pending")
-    {
-        warn!(
-            "the meta for `{}` reports version `{}` · this is the v0-pending fallback for an \
-             unknown federation slug, not a real charter. Do not sign this. The OC-managed \
-             oc-me-v1 federation's canonical charter is at ochk.io/docs/federation/oc-me-v1; \
-             self-serve federations get their charter computed at seat-assignment time.",
-            resp.meta.federation_slug, resp.meta.charter_version
-        );
+    print!("{}", fetch_summary(&slug, &resp));
+    if resp.meta.is_some() {
+        if let Err(e) = charter_to_sign(&slug, resp.meta) {
+            warn!("{e}. Do not sign it.");
+        }
     }
     Ok(())
 }
@@ -66,8 +60,15 @@ pub fn fetch(slug: String) -> Result<()> {
 /// What `charter fetch` prints. The count is every signature the portal has
 /// recorded for the federation, superseded versions included, so it is not a
 /// ratification count.
-fn fetch_summary(resp: &CharterFetchResponse) -> String {
-    let m = &resp.meta;
+fn fetch_summary(slug: &str, resp: &CharterFetchResponse) -> String {
+    let Some(m) = &resp.meta else {
+        return format!(
+            "federation : {slug}\n\
+             no charter published for {slug}\n\
+             signatures recorded: {}\n",
+            resp.signatures.len()
+        );
+    };
     let mut out = [
         format!("federation : {}", m.federation_slug),
         format!("version    : {}", m.charter_version),
@@ -79,6 +80,28 @@ fn fetch_summary(resp: &CharterFetchResponse) -> String {
     .join("\n");
     out.push('\n');
     out
+}
+
+/// The charter `sign` may commit to, or why there is none: the portal
+/// publishes no charter for the federation (`meta: null`), or an older portal
+/// sent its "v0-pending" stand-in, which carries oc-me-v1's hash.
+fn charter_to_sign(slug: &str, meta: Option<CharterMeta>) -> Result<CharterMeta> {
+    let meta = meta.ok_or_else(|| {
+        anyhow!(
+            "no charter published for `{slug}`, so there is nothing to ratify. A federation \
+             you create gets its charter when its seats are assigned; the OC-managed oc-me-v1 \
+             charter is at ochk.io/docs/federation/oc-me-v1"
+        )
+    })?;
+    if meta.charter_version.contains("placeholder") || meta.charter_version.contains("pending") {
+        return Err(anyhow!(
+            "the meta for `{slug}` reports version `{}`, the stand-in an older portal sent \
+             for a federation with no charter, not a real charter. Verify the slug and \
+             re-run. The OC-managed oc-me-v1 charter is at ochk.io/docs/federation/oc-me-v1",
+            meta.charter_version
+        ));
+    }
+    Ok(meta)
 }
 
 /// `oc-guardian charter sign <slug> --out <path>` · fetch the
@@ -112,17 +135,7 @@ pub fn sign(slug: String, out: String, hsm: String) -> Result<()> {
     let meta_resp: CharterFetchResponse = client
         .get_json(&path)
         .with_context(|| format!("fetching charter meta for federation {slug}"))?;
-    let meta = meta_resp.meta;
-
-    if meta.charter_version.contains("placeholder") || meta.charter_version.contains("pending") {
-        return Err(anyhow!(
-            "refusing to sign · the meta for `{slug}` reports version `{}`, which is the \
-             v0-pending fallback for an unknown federation slug, not a real charter. \
-             Verify the slug and re-run. The OC-managed oc-me-v1 charter is at \
-             ochk.io/docs/federation/oc-me-v1.",
-            meta.charter_version
-        ));
-    }
+    let meta = charter_to_sign(&slug, meta_resp.meta).context("refusing to sign")?;
 
     // 3. Load the operator signer (OS keychain, or the key file `init
     //    --key-file` recorded). We get a `sign(&[u8])` API only.
@@ -316,37 +329,91 @@ fn is_leap_year(y: i64) -> bool {
 mod tests {
     use super::*;
 
+    fn oc_me_v1() -> CharterMeta {
+        CharterMeta {
+            federation_slug: "oc-me-v1".into(),
+            charter_hash: "5fcb".into(),
+            charter_version: "v1.1.0".into(),
+            charter_url: "https://ochk.io/docs/federation/oc-me-v1".into(),
+            published_at: "2026-10-31T00:00:00.000Z".into(),
+        }
+    }
+
+    // One signature over a superseded version: recorded, not a ratification.
+    fn old_signature() -> oc_guardian_core::portal_client::CharterSignature {
+        oc_guardian_core::portal_client::CharterSignature {
+            federation_slug: "oc-me-v1".into(),
+            operator_id: "op-cf6d365829055b25".into(),
+            operator_pubkey: "ab".repeat(32),
+            charter_hash: "58f5".into(),
+            charter_version: "v1.0.0".into(),
+            signed_at: "2026-05-21T04:53:53.042Z".into(),
+            sig_hex: "cd".repeat(64),
+            received_at: "2026-05-21T04:53:53.042Z".into(),
+        }
+    }
+
     #[test]
     fn fetch_summary_counts_signatures_recorded_not_ratifications() {
         let resp = CharterFetchResponse {
             ok: true,
-            meta: oc_guardian_core::portal_client::CharterMeta {
-                federation_slug: "oc-me-v1".into(),
-                charter_hash: "5fcb".into(),
-                charter_version: "v1.1.0".into(),
-                charter_url: "https://ochk.io/docs/federation/oc-me-v1".into(),
-                published_at: "2026-10-31T00:00:00.000Z".into(),
-            },
-            // One signature over a superseded version: recorded, not a ratification.
-            signatures: vec![oc_guardian_core::portal_client::CharterSignature {
-                federation_slug: "oc-me-v1".into(),
-                operator_id: "op-cf6d365829055b25".into(),
-                operator_pubkey: "ab".repeat(32),
-                charter_hash: "58f5".into(),
-                charter_version: "v1.0.0".into(),
-                signed_at: "2026-05-21T04:53:53.042Z".into(),
-                sig_hex: "cd".repeat(64),
-                received_at: "2026-05-21T04:53:53.042Z".into(),
-            }],
+            meta: Some(oc_me_v1()),
+            signatures: vec![old_signature()],
         };
         assert_eq!(
-            fetch_summary(&resp),
+            fetch_summary("oc-me-v1", &resp),
             "federation : oc-me-v1\n\
              version    : v1.1.0\n\
              hash       : 5fcb\n\
              canonical  : https://ochk.io/docs/federation/oc-me-v1\n\
              published  : 2026-10-31T00:00:00.000Z\n\
              signatures recorded: 1\n"
+        );
+    }
+
+    #[test]
+    fn fetch_summary_says_when_no_charter_is_published() {
+        let resp = CharterFetchResponse {
+            ok: true,
+            meta: None,
+            signatures: vec![old_signature()],
+        };
+        assert_eq!(
+            fetch_summary("oc-testnet-v1", &resp),
+            "federation : oc-testnet-v1\n\
+             no charter published for oc-testnet-v1\n\
+             signatures recorded: 1\n"
+        );
+    }
+
+    #[test]
+    fn sign_refuses_a_federation_with_no_charter() {
+        let err = charter_to_sign("oc-testnet-v1", None).unwrap_err();
+        assert!(
+            err.to_string()
+                .starts_with("no charter published for `oc-testnet-v1`"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn sign_refuses_an_older_portals_stand_in() {
+        let stand_in = CharterMeta {
+            federation_slug: "oc-testnet-v1".into(),
+            charter_version: "v0-pending".into(),
+            ..oc_me_v1()
+        };
+        let err = charter_to_sign("oc-testnet-v1", Some(stand_in)).unwrap_err();
+        assert!(err.to_string().contains("`v0-pending`"), "{err}");
+    }
+
+    #[test]
+    fn sign_takes_a_published_charter() {
+        assert_eq!(
+            charter_to_sign("oc-me-v1", Some(oc_me_v1()))
+                .unwrap()
+                .charter_hash,
+            "5fcb"
         );
     }
 

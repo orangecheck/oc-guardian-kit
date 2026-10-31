@@ -166,7 +166,11 @@ pub struct CharterSignature {
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct CharterFetchResponse {
     pub ok: bool,
-    pub meta: CharterMeta,
+    /// `None` when the federation publishes no charter of its own: the portal
+    /// answers `meta: null`. The field must be there; a reply without it is a
+    /// failed read, not an answer.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub meta: Option<CharterMeta>,
     #[serde(default)]
     pub signatures: Vec<CharterSignature>,
 }
@@ -293,6 +297,21 @@ mod tests {
         let r: CharterFetchResponse = serde_json::from_str(json).unwrap();
         assert!(r.ok);
         assert!(r.signatures.is_empty());
+        assert_eq!(r.meta.unwrap().charter_version, "v1.0.0");
+    }
+
+    // me.ochk.io from c8a255c1 answers a federation with no charter of its own this way.
+    #[test]
+    fn charter_fetch_response_reads_null_meta_as_no_charter() {
+        let json = r#"{ "ok": true, "meta": null, "signatures": [] }"#;
+        let r = serde_json::from_str::<CharterFetchResponse>(json).unwrap();
+        assert!(r.meta.is_none());
+    }
+
+    #[test]
+    fn charter_fetch_response_without_meta_is_a_failed_read() {
+        let json = r#"{ "ok": true, "signatures": [] }"#;
+        assert!(serde_json::from_str::<CharterFetchResponse>(json).is_err());
     }
 
     #[test]
