@@ -4,7 +4,7 @@ The charter is the human-readable + machine-checkable contract a federation publ
 
 This file specifies the **canonical form** of the charter — the exact bytes that get hashed when an operator signs.
 
-> **What the kit does today.** `oc-guardian charter fetch <slug>` prints the charter the portal publishes, and `oc-guardian charter sign <slug>` signs the hash the portal serves (`crates/oc-guardian-charter`). Every charter in the OC operator program so far is portal-published, in the plain-text form under [Portal-published charters](#portal-published-charters). The Markdown + YAML form below, with its RFC 8785 canonicalization, `charter validate` and test vectors, is specified here but not built.
+> **What the kit does today.** `oc-guardian charter fetch <slug>` prints the charter's federation, version, hash, URL, publish time and signature count from the portal, not its text. `oc-guardian charter sign <slug>` signs the hash the portal serves without recomputing it from the canonical bytes (`crates/oc-guardian-charter`). To check that hash, rebuild the bytes and take their SHA-256 yourself. Every charter in the OC operator program so far is portal-published, in the plain-text form under [Portal-published charters](#portal-published-charters). The Markdown + YAML form below, with its RFC 8785 canonicalization, `charter validate` and test vectors, is specified here but not built.
 
 ## File layout
 
@@ -64,7 +64,7 @@ The charter hash is computed over **canonical bytes**, not the raw file:
 
 The hex-encoded SHA-256 is the charter's hash. Operators sign this hash with their hardware key; consumers verify against it.
 
-Not built: no kit command runs these steps yet, and there are no test vectors. `oc-guardian charter sign` signs the hash the portal serves.
+Not built: no kit command runs these steps yet, and there are no test vectors. `oc-guardian charter sign` signs the hash the portal serves, without recomputing it.
 
 ## Portal-published charters
 
