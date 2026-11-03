@@ -31,26 +31,30 @@
 //! `oc-guardian bridge allow <action>`. The default state is
 //! "bridge disabled, no actions allowed." Operators ratchet up
 //! permissions only when they understand each action's effect.
+//!
+//! **Not built yet.** The functions below change nothing and say so: the
+//! portal cannot send this kit an action request. An operator runs each
+//! action with its own `oc-guardian` command instead.
 
 use anyhow::Result;
 use tracing::info;
 
 pub fn enable() -> Result<()> {
-    info!("bridge enable: stub — v0.2.0 subscribes to portal action requests");
+    info!("bridge enable: not built yet, so nothing changed: the portal cannot send this kit action requests. Run each action with its own oc-guardian command (`oc-guardian --help` lists them).");
     Ok(())
 }
 
 pub fn allow(action: String) -> Result<()> {
-    info!("bridge allow ({action}): stub — v0.2.0 adds the action to the local allowlist");
+    info!("bridge allow ({action}): not built yet, so no allowlist was written and the portal can request nothing. Run the action with its own oc-guardian command.");
     Ok(())
 }
 
 pub fn disable() -> Result<()> {
-    info!("bridge disable: stub — v0.2.0 unsubscribes; guardian operation unaffected");
+    info!("bridge disable: not built yet, so there was nothing to turn off. Guardian operation is unaffected.");
     Ok(())
 }
 
 pub fn status() -> Result<()> {
-    info!("bridge status: stub — v0.2.0 prints subscription state + allowlist");
+    info!("bridge status: not built yet. The portal cannot send this kit action requests, and no action is allowed.");
     Ok(())
 }
