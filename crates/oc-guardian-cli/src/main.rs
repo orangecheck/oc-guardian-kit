@@ -110,7 +110,8 @@ enum Command {
     /// entering a browser. Writes a file to upload at ochk.app/me/operator.
     Bind(BindArgs),
 
-    /// Optional bridge: opt in to portal-mediated signed action requests.
+    /// Portal bridge: not built yet. Its commands change nothing; run each
+    /// action with its own command.
     #[command(subcommand)]
     Bridge(BridgeCommand),
 
@@ -467,13 +468,13 @@ struct BindArgs {
 
 #[derive(Subcommand)]
 enum BridgeCommand {
-    /// Opt in to portal-mediated signed action requests.
+    /// Not built yet: changes nothing, and the portal cannot reach this kit.
     Enable,
-    /// Allowlist a specific portal action type.
+    /// Not built yet: writes no allowlist.
     Allow { action: String },
-    /// Disable the bridge. Guardian operation is unaffected.
+    /// Not built yet: there is nothing to turn off. Guardian operation is unaffected.
     Disable,
-    /// Show the current allowlist + bridge state.
+    /// Not built yet: says so; no portal action is allowed.
     Status,
 }
 
