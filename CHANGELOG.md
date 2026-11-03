@@ -28,11 +28,9 @@ surface (CLI flags, action-envelope schemas, file paths under
   longer in the signed params; the reviewer checks the attached file against
   `questionnaire_sha256` and `questionnaire_bytes`. This changes an
   action-envelope schema; me.ochk.io reads the field as optional.
-- **`charter sign` signs an envelope, and `charter fetch` counts "signatures
-  recorded".** The signature covers an envelope naming the charter hash, the
-  operator, version, time, nonce and expiry, not the bare hash. `fetch` printed
-  its count as "ratifications"; it includes signatures over superseded
-  versions, so it now reads "signatures recorded".
+- **`charter fetch` counts "signatures recorded".** It printed its count as
+  "ratifications"; the count includes signatures over superseded versions, so
+  it now reads "signatures recorded".
 
 ### Added
 
