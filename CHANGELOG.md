@@ -17,6 +17,22 @@ surface (CLI flags, action-envelope schemas, file paths under
   <slug>` and `sign` refuses with the same words. A reply with no `meta` field
   at all is still an error. `CharterFetchResponse.meta` is an
   `Option<CharterMeta>`.
+- **The printed `meta submit` command is one quoted shell word.** A message
+  with an apostrophe broke the command a guardian pasted as printed; the
+  object is now shell-quoted.
+
+### Changed
+
+- **An application envelope signs the questionnaire's hash and size only.**
+  `questionnaire_path` (where the file sat on the operator's machine) is no
+  longer in the signed params; the reviewer checks the attached file against
+  `questionnaire_sha256` and `questionnaire_bytes`. This changes an
+  action-envelope schema; me.ochk.io reads the field as optional.
+- **`charter sign` signs an envelope, and `charter fetch` counts "signatures
+  recorded".** The signature covers an envelope naming the charter hash, the
+  operator, version, time, nonce and expiry, not the bare hash. `fetch` printed
+  its count as "ratifications"; it includes signatures over superseded
+  versions, so it now reads "signatures recorded".
 
 ### Added
 
