@@ -84,6 +84,8 @@ Settings come from the environment:
 | `OC_BITCOIN_NETWORK` | yes | `bitcoin`, `testnet`, `testnet4`, `signet` or `regtest`. There is no default. |
 | `OC_ESPLORA_URL`, or `OC_BITCOIND_URL` + `OC_BITCOIND_USERNAME` + `OC_BITCOIND_PASSWORD` | yes | the chain source fedimintd watches |
 | `OC_PUBLIC_HOST` | yes, off Fly | the name peers and clients reach this guardian at (on Fly, `<app>.fly.dev`) |
+| `OC_ATTESTATION_POST_URL` | to check in | where the kit posts this guardian's signed liveness report every 5 minutes: `https://me.ochk.io/api/operator/attestation`. It is signed with `OC_ATTEST_KEY_HEX` when that is set, else with the key from `oc-guardian init` (keychain or `--key-file`). Unset, nothing is posted. A federation's invite is published only once each guardian whose API it names has checked in, or runs on orangecheck-hosted hardware. |
+| `OC_ATTEST_KEY_HEX` | on orangecheck-hosted hardware | the machine's own attestation key, 32 bytes as hex, which signs its liveness reports in place of the operator key a hosted machine never holds. The reports count for the seat only while the seat's operator has signed a delegation to its public key (`oc-guardian attest-delegate`, BYPASS.md §14). The key never prints. |
 | `OC_P2P_PORT`, `OC_API_PORT`, `OC_UI_PORT` | no | 9000, 9001, 8175 |
 | `FM_BIND_P2P`, `FM_BIND_API`, `FM_BIND_UI`, `FM_P2P_URL`, `FM_API_URL`, `FM_DATA_DIR` | no | fedimintd's own settings. Set them and the kit passes them through unchanged. |
 | `OC_GUARDIAN_SETUP_PASSWORD` | no | turns on the setup gate (below) until DKG is done |
@@ -162,7 +164,7 @@ Every lifecycle stage of the program (application → exit) has a kit command. S
 
 ## What needs the portal
 
-Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify-status`, `federations list` and `charter {fetch, sign, publish}`. `bind`, `alerts post`, `payouts claim`, `exit-handoff`, `exit-ratify`, `attest-delegate` and `federation handover {offer, accept}` sign locally and write a file you upload, signed in, on the ochk.app page the kit names (BYPASS.md, "Submitting what the kit signs"). `bind`, `exit-ratify` and `attest-delegate` need a recent bitcoin mainnet block (height and hash, within 6 of the tip). Everything else is local.
+Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify-status`, `federations list` and `charter {fetch, sign, publish}`; `fedimintd run` posts its liveness reports to `OC_ATTESTATION_POST_URL` when that is set. `bind`, `alerts post`, `payouts claim`, `exit-handoff`, `exit-ratify`, `attest-delegate` and `federation handover {offer, accept}` sign locally and write a file you upload, signed in, on the ochk.app page the kit names (BYPASS.md, "Submitting what the kit signs"). `bind`, `exit-ratify` and `attest-delegate` need a recent bitcoin mainnet block (height and hash, within 6 of the tip). Everything else is local.
 
 ## Two fedimint behaviours to know
 
