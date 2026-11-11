@@ -6,7 +6,7 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
-## Unreleased
+## 0.2.11 — 2026-11-11
 
 ### Fixed
 
@@ -31,6 +31,11 @@ surface (CLI flags, action-envelope schemas, file paths under
 - **`charter fetch` counts "signatures recorded".** It printed its count as
   "ratifications"; the count includes signatures over superseded versions, so
   it now reads "signatures recorded".
+- **`bridge` commands and their help say the bridge is not built.**
+  `bridge enable|allow|disable|status` and the help texts described
+  portal-mediated action requests and an allowlist. Each now says it is not
+  built yet, that nothing changed, and which `oc-guardian` command runs the
+  action instead. They still write nothing.
 
 ### Added
 
@@ -41,6 +46,18 @@ surface (CLI flags, action-envelope schemas, file paths under
   prints it). Keys are sorted and there is no whitespace, so every guardian who
   runs it with the same inputs submits the same bytes, which the meta module
   needs from a threshold before it adopts them.
+
+### Docs
+
+- CHARTER-FORMAT.md describes the plain-text charter the portal publishes,
+  how a superseded charter reads, what `charter fetch` prints and what
+  `charter sign` checks, and how to check a charter signature offline,
+  including the seat-claim bytes.
+- The application questionnaire is submitted at ochk.app/me/operator/apply,
+  where the answers are pasted and signed with the operator key, or by email
+  to apply@ochk.io.
+- README: `fedimintd run` posts liveness reports to `OC_ATTESTATION_POST_URL`
+  when that is set.
 
 ## 0.2.10
 
