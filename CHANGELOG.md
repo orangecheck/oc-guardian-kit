@@ -6,6 +6,14 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
+## 0.2.12 — 2026-11-11
+
+The same code as 0.2.11. The release workflow builds the macOS binaries on
+macos-15, so this tag carries all three platform builds; the v0.2.11 tag has
+the `ghcr.io/orangecheck/oc-guardian:v0.2.11` image and no binaries. The
+workflow can also be dispatched by hand, which builds and smoke-tests the
+binaries and publishes nothing; only a tag push signs and publishes.
+
 ## 0.2.11 — 2026-11-11
 
 ### Fixed
