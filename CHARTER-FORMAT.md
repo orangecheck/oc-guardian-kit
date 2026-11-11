@@ -62,7 +62,7 @@ The charter hash is computed over **canonical bytes**, not the raw file:
 4. Concatenate: `meta_canon_bytes || 0x0a || body_nfc_bytes`.
 5. SHA-256 the result.
 
-The hex-encoded SHA-256 is the charter's hash. Operators sign this hash with their hardware key; consumers verify against it.
+The hex-encoded SHA-256 is the charter's hash. Operators sign this hash with their operator key; consumers verify against it.
 
 Not built: no kit command runs these steps yet, and there are no test vectors. `oc-guardian charter sign` signs an envelope naming the hash the portal serves, the operator, version, time, nonce and expiry, without recomputing the hash.
 

@@ -7,14 +7,14 @@ The kit's job is to let an operator stand up and run a Fedimint guardian without
 | Threat | Mitigation |
 |---|---|
 | orangecheck compromise → operator infrastructure compromise | For a seat you run, the kit runs under your credentials on your hardware; orangecheck holds no credential for your machines. |
-| Portal compromise → guardian compromise | Everything that carries an operator's authority is signed by the operator key on the operator's machine. The portal can ask for a signature; it cannot make one. |
+| Portal compromise → guardian compromise | The portal cannot push to, change or stop a guardian on the operator's hardware. The kit's key is in the OS keychain on the operator's machine, outside any page. An operator who keeps the key in the portal instead keeps it in ochk.app's browser storage, where the script ochk.app serves can read it. Charter signatures, seat claims, amendment votes and exit ratifications need the operator key's signature; other operator writes, such as a federation's settlement key, take a signed-in ochk.app session. |
 | Someone else sets up your guardian first | Until DKG has run, fedimintd's setup API needs no password until local params are set, and fedimintd forgets them on every restart. `fedimintd run` will not start such a guardian with its setup reachable from other machines unless the setup gate is on (`OC_GUARDIAN_SETUP_PASSWORD`: fedimintd's API stays on loopback and only calls carrying that password pass; with `OC_GUARDIAN_NAME` the kit sets local params itself) or the operator passes `--allow-public-setup`. The setup UI binds loopback by default. |
 | Supply-chain attack (kit binary tampered with) | Releases are signed with cosign (Sigstore keyless) and carry a SLSA build provenance attestation from GitHub Actions; each archive has a published SHA-256. Build from source with `--locked` to check a binary yourself. |
 | Operator key theft | The key lives in the OS keychain, or with `init --key-file` in a file readable by you only. Both are software: anyone who controls your account can use it. Hardware-token backends are not built yet. |
 | Replay of operator-signed envelopes | Each envelope carries a nonce (unix seconds) and an expiry; the portal rejects a nonce equal to or lower than one it has seen. |
 | Confused-deputy attacks via portal | The portal bridge, which would carry portal requests to the kit, is not built; the kit acts on no portal request. |
 | Denial-of-service against guardian | Standard fedimintd posture. The kit adds nothing custodial; an outage moves no funds. |
-| orangecheck sunset / portal goes dark | The kit signs everything an operator signs without the portal. Federation membership is by operator key. See [BYPASS.md](./BYPASS.md). |
+| orangecheck sunset / portal goes dark | The kit signs everything the portal signs but a seat claim and an amendment vote, without the portal; uploading what it signs needs ochk.app. Federation membership is by operator key. See [BYPASS.md](./BYPASS.md). |
 
 ## Key handling
 
@@ -72,4 +72,4 @@ sha256sum target/release/oc-guardian
 - **Not** a custody service. The kit doesn't hold funds. It coordinates an operator running their own `fedimintd`.
 - **Not** a backup service. Operators are responsible for their `fedimintd` state backups; the kit can configure them but doesn't store them.
 - **Not** a key escrow. There is no recovery path through orangecheck. If an operator loses their operator key and their `fedimintd` state, the federation continues with `N-1` guardians per its threshold; the operator exits via `oc-guardian exit-handoff`.
-- **Not** a portal-replacement guarantee. Operators who actively choose to use the portal get a different UX; bypass parity guarantees the *capability* to operate without the portal, not that the kit's CLI matches the portal's UX surface-for-surface.
+- **Not** a portal-replacement guarantee. Operators who actively choose to use the portal get a different UX; bypass parity is the *capability* to sign without the portal (all but a seat claim and an amendment vote today, BYPASS.md), not that the kit's CLI matches the portal's UX surface-for-surface.

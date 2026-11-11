@@ -131,11 +131,14 @@ pub fn init(hsm: String, key_file: Option<String>) -> Result<()> {
         println!();
     }
     println!("  next steps:");
-    println!("    1. oc-guardian register --transport https     # publish your pubkey to the OC operator registry");
     println!(
-        "    2. oc-guardian apply prepare --out application.json --questionnaire ./your-answers.md"
+        "    1. oc-guardian apply prepare --out application.json --questionnaire ./your-answers.md"
     );
-    println!("    3. email apply@ochk.io with the signed envelope (see docs/application-questionnaire.md)");
+    println!("    2. email apply@ochk.io the signed envelope and your answers file");
+    println!("       (the envelope carries only the answers' hash; see docs/application-questionnaire.md)");
+    println!(
+        "    3. oc-guardian register     # check that the registry lists your pubkey once accepted"
+    );
     println!();
 
     Ok(())
@@ -158,8 +161,8 @@ fn application_params(
 }
 
 /// Produce a signed application envelope from the operator's filled-out
-/// questionnaire. Output is a JSON file the operator attaches to the
-/// email to apply@ochk.io. Bypass for portal §01 (apply).
+/// questionnaire. Output is a JSON file the operator attaches, with the
+/// questionnaire, to the email to apply@ochk.io. Bypass for portal §01 (apply).
 pub fn apply_prepare(out: String, questionnaire: Option<String>, _hsm: String) -> Result<()> {
     // 1. Locate + hash the questionnaire.
     let q_path =
@@ -236,7 +239,8 @@ pub fn apply_prepare(out: String, questionnaire: Option<String>, _hsm: String) -
     println!("    envelope                 {}", out);
     println!();
     println!("  next step:");
-    println!("    email apply@ochk.io with {} attached.", out);
+    println!("    email apply@ochk.io with {out} and {q_path} attached.");
+    println!("    the envelope carries the questionnaire's hash and size, not your answers.");
     println!("    subject: OC Guardian Application — <your handle>");
     println!();
     println!("  to verify the signature locally before sending:");
@@ -456,8 +460,9 @@ pub fn register(_transport: String) -> Result<()> {
         println!("    status    ✓ your pubkey is in the OC operator registry (accepted)");
     } else {
         println!("    status    ✗ not yet in the registry");
-        println!("    → run `oc-guardian apply prepare` + email apply@ochk.io; once accepted,");
-        println!("      your pubkey is published here for federations to include in a charter.");
+        println!("    → run `oc-guardian apply prepare`, then email apply@ochk.io the envelope");
+        println!("      and your answers file. Once accepted, your pubkey is published here");
+        println!("      for federations to include in a charter.");
     }
     println!();
     Ok(())
@@ -496,16 +501,18 @@ pub fn federations_list() -> Result<()> {
 }
 
 /// `oc-guardian federations join` · joining a federation isn't a single
-/// envelope — it's a seat assignment (admin) + a charter ratification.
+/// envelope — it's a seat the creator holds, a seat claim, and a charter ratification.
 /// Point the operator at the real path rather than POST to a non-endpoint.
 pub fn federations_join(slug: String, _transport: String) -> Result<()> {
     println!();
     println!("  joining federation {slug}:");
-    println!("    1. an OC admin assigns you a guardian seat (after your application is accepted)");
-    println!("    2. ratify the charter — that IS your join:");
+    println!("    1. the federation's creator holds a guardian seat for you (after your application is accepted)");
+    println!("    2. claim it with your operator key at ochk.app/me/operator/federations/{slug}");
+    println!("       (the portal signs seat claims; the kit cannot yet)");
+    println!("    3. ratify the charter — that IS your join:");
     println!("         oc-guardian charter sign {slug}");
     println!("         oc-guardian charter publish --file charter-sig.json");
-    println!("    3. run DKG with your peers:  oc-guardian ceremony start --name <name> …");
+    println!("    4. run DKG with your peers:  oc-guardian ceremony start --name <name> …");
     println!();
     Ok(())
 }

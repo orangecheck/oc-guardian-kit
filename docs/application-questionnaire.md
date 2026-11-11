@@ -10,7 +10,7 @@ Fill out every section. Sign the resulting JSON envelope with your operator key:
 oc-guardian apply prepare --out application.json --questionnaire ./this-file.md
 ```
 
-Then either submit via the portal or attach the signed envelope to an email to `apply@ochk.io`.
+Then email `application.json` and this file, filled in, to `apply@ochk.io`. The envelope carries the SHA-256 and size of your answers, not the answers, so the reviewer needs both. On the portal you paste your answers instead, and the key in your browser signs them.
 
 ---
 
@@ -22,7 +22,7 @@ A2. **Operator legal entity** (required; person OR org. if person, just your leg
 
 A3. **Public contact channel** (Nostr npub OR HTTPS endpoint OR PGP-secured email — pick one; will be embedded in charters and used for incident comms):
 
-A4. **PGP fingerprint** (40-hex-char fingerprint of a key you control; for charter signing fallback if your hardware-token-backed operator key is unavailable):
+A4. **PGP fingerprint** (optional; 40-hex-char fingerprint of a key you control. Nothing in the program uses it yet: there is no PGP path for charter signing or anything else):
 
 A5. **Geographic jurisdiction** (country + region):
 
@@ -50,7 +50,7 @@ B7. **Bus factor / continuity** (if you're hit by a bus, who takes over your gua
 
 ## §C — Custody posture
 
-C1. **Operator hardware token** (which token: YubiKey FIDO2, Ledger, OS passkey, etc.; we recommend a hardware token with user-presence — a simple OS passkey is acceptable for v1):
+C1. **Operator hardware token** (which token you would use: YubiKey FIDO2, Ledger, OS passkey, etc.; we recommend a hardware token with user-presence — a simple OS passkey is acceptable for v1. The kit does not use one yet: `--hsm` keeps the key in the OS keychain or a key file, see the README's "What is not built yet"):
 
 C2. **Backup / recovery for the operator key** (how you'll recover if your primary token is lost — backup token? PGP-encrypted seed phrase printed and split across two safes? something else; "I haven't thought about it" is not an answer):
 
@@ -74,9 +74,9 @@ D3. **References** (two people who can vouch for your operational competence; id
 
 E1. I understand that if accepted, I will be listed publicly in any charter I sign, with my legal entity, jurisdiction, and contact channel. ☐ yes
 
-E2. I understand that I am responsible for my own infrastructure, my own operator key, and my own `fedimintd` lifecycle. OC the company has no access to any of these and cannot recover any of them on my behalf. ☐ yes
+E2. I understand that I am responsible for my own infrastructure, my own operator key, and my own `fedimintd` lifecycle. orangecheck's servers never receive my operator key, and orangecheck cannot recover it on my behalf. A key I keep in ochk.app's browser storage can be read by the script ochk.app serves, which orangecheck deploys; the kit keeps the key in my OS keychain, outside any page. If I choose hosted hardware, orangecheck runs that machine. ☐ yes
 
-E3. I understand that the OC operator portal is convenience, not control. I can operate my guardian end-to-end without ever using the portal. The portal cannot push updates, modify, or shut down my guardian — every action requires my hardware-key signature. ☐ yes
+E3. I understand what the portal can and cannot do. It cannot push updates to, modify, or shut down a guardian on my own hardware. Charter signatures, seat claims, amendment votes and exit ratifications need my operator key's signature; other operator actions, such as setting a federation's settlement key, take a signed-in ochk.app session rather than a signature, so I guard that session too. The kit signs without the portal, but I upload what it signs on ochk.app, signed in, and claiming a seat and voting on an amendment are signed only in the portal today. No operator key is hardware-backed yet. ☐ yes
 
 E4. I have read [`SECURITY.md`](../SECURITY.md), [`BYPASS.md`](../BYPASS.md), and [`CHARTER-FORMAT.md`](../CHARTER-FORMAT.md). ☐ yes
 
@@ -84,6 +84,6 @@ E5. I have run `oc-guardian init` and have my operator pubkey ready to embed in 
 
 ---
 
-**Signed envelope:** when you run `oc-guardian apply prepare`, the resulting `application.json` carries your filled-in answers + your operator pubkey, signed with your hardware key. Submit that file. Acceptance returns a signed envelope you verify with `oc-guardian apply verify-acceptance`.
+**Signed envelope:** when you run `oc-guardian apply prepare`, the resulting `application.json` carries the SHA-256 and size of your filled-in answers and your operator pubkey, signed with your operator key. It does not carry the answers: send it with this file, filled in, so the reviewer can check the file against the hash. Acceptance returns a signed envelope you verify with `oc-guardian apply verify-acceptance`.
 
-OC reviewers respond within 14 days. Applications with manual-review concerns may take longer. Decisions include the reasoning so applicants who aren't admitted know what to address.
+OC reviewers respond within 14 days. Applications with manual-review concerns may take longer. A reviewer can add a note to a decision saying what to address; a decision does not have to carry one.

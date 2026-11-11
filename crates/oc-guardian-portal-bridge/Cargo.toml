@@ -7,7 +7,7 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Optional bridge: receives signed action requests from the OC operator portal, presents them to the operator's hardware key for authorization, applies them. The kit works without it."
+description = "Not built yet: an optional bridge that would carry the OC operator portal's action requests to the kit for the operator to approve. The kit works without it."
 
 [dependencies]
 anyhow.workspace = true

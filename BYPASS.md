@@ -1,6 +1,6 @@
-# BYPASS.md — every portal feature has a kit-only equivalent
+# BYPASS.md — the kit-only path for each portal step
 
-**Audience:** operators who want to participate in the OC guardian operator program *without ever touching the [`ochk.app/me/operator`](https://ochk.app/me/operator) portal*. This document is a first-class artifact maintained at parity with the portal — a portal feature is **not done** until its bypass is documented and verified working.
+**Audience:** operators who want to sign with the kit rather than with a key in the browser at the [`ochk.app/me/operator`](https://ochk.app/me/operator) portal. This document is a first-class artifact maintained at parity with the portal — a portal feature is **not done** until its bypass is documented and verified working. Two are not done: claiming a seat and voting on a charter amendment have no kit command yet, so only the portal signs them.
 
 **Architectural commitment:** A guardian operating purely via the kit is **architecturally indistinguishable** at the federation layer from a guardian operating with the portal. Both produce the same envelopes, sign with the same operator key, and are accepted by federations and consumers identically.
 
@@ -8,14 +8,14 @@
 
 ## Table of equivalents
 
-Every row here is a portal route the operator might land on, paired with the kit-only path that does the same thing. Both paths are supported. Both are documented at parity. The kit-only path never depends on `ochk.app/me/operator` being online.
+Every row here is a portal route the operator might land on, paired with the kit-only path that does the same thing. Both paths are supported. The kit signs without the portal; most of what it signs is then uploaded, signed in, on an ochk.app page ([Submitting what the kit signs](#submitting-what-the-kit-signs)), so that step needs ochk.app online.
 
 | # | Lifecycle stage | Portal path | Kit-only equivalent |
 |---|---|---|---|
-| 01 | Apply to the program | `ochk.app/me/operator/apply`: paste your answers, signed with the key in your browser | Email `apply@ochk.io` with the application questionnaire — see [§01 below](#01--apply-to-the-program) |
+| 01 | Apply to the program | `ochk.app/me/operator/apply`: paste your answers, signed with the key in your browser | Email `apply@ochk.io` the signed envelope `oc-guardian apply prepare` writes and your filled-in questionnaire — see [§01 below](#01--apply-to-the-program) |
 | 02 | Get accepted + onboarded | Portal registers the key in your browser | `oc-guardian init` (OS keychain, or `--key-file` on a server), then `oc-guardian bind` — see [§02](#02--get-accepted--onboarded) |
 | 03 | Discover federations seeking guardians | Portal lists federations with seats open | `oc-guardian federations list` (the same directory, read directly) — see [§03](#03--discover-federations-seeking-guardians) |
-| 04 | Join a federation | Portal mediates the seat and the charter | A seat assignment plus your charter ratification — see [§04](#04--join-a-federation) |
+| 04 | Join a federation | Portal mediates the seat and the charter | The seat the creator holds for you, a seat claim (the portal signs it; no kit command yet), and your charter ratification — see [§04](#04--join-a-federation) |
 | 05 | Run the DKG ceremony | Portal drives the setup API of the seats it hosts | `oc-guardian ceremony {start, add-peer, dkg, status, finalize}` on your own guardian — see [§05](#05--run-the-dkg-ceremony) |
 | 06 | Sign the federation charter | Portal renders the charter and asks your key to sign | `oc-guardian charter {fetch, sign, publish}` — see [§06](#06--sign-the-federation-charter) |
 | 07 | Run the guardian | Portal shows install + run instructions | `oc-guardian fedimintd run` — see [§07](#07--run-the-guardian) |
@@ -28,6 +28,7 @@ Every row here is a portal route the operator might land on, paired with the kit
 | 14 | Let a hosted guardian attest | "Let this guardian attest" on the seat's hosted status | `oc-guardian attest-delegate --federation <slug> --seat <n> --attest-pubkey <hex> --block-height <h> --block-hash <hash>` — see [§14](#14--let-a-hosted-guardian-attest) |
 | 15 | Hand a federation to another operator | The handover section of the federation's page | `oc-guardian federation handover offer --federation <slug> --to <op-id>`, then the operator it names runs `… accept` — see [§15](#15--hand-a-federation-to-another-operator) |
 | 16 | Name a successor federation | None: guardians submit meta themselves | `oc-guardian meta successor --invite <fed1…> --expires <date> --message <text> --current <file>` — see [§16](#16--name-a-successor-federation) |
+| 17 | Vote on a charter amendment | The federation's amendments page, signed by the key in your browser | None yet: the kit has no vote command |
 
 ---
 
@@ -44,9 +45,9 @@ Every row here is a portal route the operator might land on, paired with the kit
    oc-guardian apply prepare --out application.json --questionnaire ./answers.md
    ```
 
-   This produces a signed application envelope you can attach to email. The envelope contains a hash of the questionnaire content.
+   This produces a signed application envelope you can attach to email. The envelope carries the SHA-256 and size of your answers file, not the answers.
 
-3. Email `apply@ochk.io` with the signed envelope as an attachment. Subject line: `OC Guardian Application — <your handle>`.
+3. Email `apply@ochk.io` with both the signed envelope and your filled-in questionnaire attached: the envelope carries the questionnaire's hash and size, not the answers. Subject line: `OC Guardian Application — <your handle>`.
 
 4. The OC reviewer team verifies your envelope's signature offline, runs the same vetting as the portal-mediated path, and replies via email with a reviewer-signed acceptance envelope (`acceptance-app_….json`). Verify it locally before trusting the email body:
 
@@ -116,7 +117,7 @@ This reads the public federation directory at `me.ochk.io/api/federations` (no a
 
 **Portal path:** the portal's seat and charter flow.
 
-**Bypass:** joining is two things, not one envelope: an orangecheck admin assigns you a guardian seat once your application is accepted, and you ratify the federation's charter ([§06](#06--sign-the-federation-charter)), which is your join. `oc-guardian federations join <slug>` prints those steps.
+**Bypass:** joining is three things, not one envelope. Once your application is accepted, the federation's creator holds a guardian seat for you (on the federations orangecheck creates, that is orangecheck). You claim the seat with your operator key on `ochk.app/me/operator/federations/<slug>`: only the portal signs a seat claim today, so this step has no bypass yet. Then you ratify the federation's charter ([§06](#06--sign-the-federation-charter)), which is your join. `oc-guardian federations join <slug>` prints those steps.
 
 ---
 

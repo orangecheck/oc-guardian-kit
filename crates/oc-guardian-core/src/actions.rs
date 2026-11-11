@@ -3,7 +3,7 @@
 //! Every action that produces or applies authority — a join request,
 //! a charter signature, a payout claim, a portal-bridge command —
 //! is wrapped in an `ActionEnvelope`. The envelope is canonicalized,
-//! hashed, and signed by the operator's hardware key. The receiver
+//! hashed, and signed by the operator key. The receiver
 //! verifies the signature against the operator's registered pubkey
 //! before acting.
 //!

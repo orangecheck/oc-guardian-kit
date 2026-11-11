@@ -21,9 +21,10 @@ use tracing::info;
     about = "OC guardian operator toolkit",
     long_about = "Self-serve provisioning + operations toolkit for running an \
                   OC-affiliated Fedimint guardian. Optional companion to the \
-                  operator portal at ochk.app/me/operator — the kit works \
-                  end-to-end without ever touching the portal. See BYPASS.md \
-                  for the canonical mapping."
+                  operator portal at ochk.app/me/operator — the kit signs \
+                  everything the portal signs but a seat claim and an \
+                  amendment vote, and most of what it signs is uploaded on \
+                  ochk.app, signed in. See BYPASS.md for the canonical mapping."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -50,8 +51,8 @@ enum Command {
     #[command(subcommand)]
     Apply(ApplyCommand),
 
-    /// Register your operator pubkey with the OC operator registry.
-    /// Bypass for portal §02 (onboarding · publish).
+    /// Check whether the OC operator registry lists your operator pubkey.
+    /// It does once your application is accepted. Bypass for portal §02.
     Register(RegisterArgs),
 
     /// Federation discovery + join + leave, and a creator's handover.
@@ -142,7 +143,8 @@ struct InitArgs {
 enum ApplyCommand {
     /// Prepare a signed application envelope from your filled-out
     /// questionnaire. Output is `application.json`, to email to
-    /// apply@ochk.io.
+    /// apply@ochk.io with the filled-out questionnaire: the envelope
+    /// carries its hash, not its answers.
     Prepare {
         #[arg(long, default_value = "application.json")]
         out: String,
@@ -174,7 +176,7 @@ enum ApplyCommand {
 
 #[derive(Parser)]
 struct RegisterArgs {
-    /// Transport for registration. `https` (default) or `email`.
+    /// Accepted and ignored: the registry is always read over HTTPS.
     #[arg(long, default_value = "https")]
     transport: String,
 }

@@ -1,6 +1,6 @@
 # oc-guardian-kit
 
-**The operator's own tooling for running a Fedimint guardian in an orangecheck federation.** Self-serve. Composes with `fedimintd` rather than replacing it. Optional companion to the [`ochk.app/me/operator`](https://ochk.app/me/operator) portal: everything an operator signs, the kit can sign without the portal.
+**The operator's own tooling for running a Fedimint guardian in an orangecheck federation.** Self-serve. Composes with `fedimintd` rather than replacing it. Optional companion to the [`ochk.app/me/operator`](https://ochk.app/me/operator) portal: the kit signs everything the portal signs but two, without a key in the browser. Claiming a seat and voting on a charter amendment are signed only in the portal today.
 
 > **Where things stand.** While the system is in testing, orangecheck holds every role, guardian seats included: it runs every test seat, on its own hardware, with its own keys ([ochk.app/custody](https://ochk.app/custody) shows the live picture). The kit is how independent operators take those seats over. orangecheck as the lasting operator is never the design.
 >
@@ -54,7 +54,8 @@ oc-guardian init --key-file /var/lib/oc-guardian/operator.key
 #    filled in, and takes the bind-claim.json it writes.
 oc-guardian bind --did <your did:oc> --block-height <h> --block-hash <hash>
 
-# 2. Apply. Email apply@ochk.io the signed envelope this writes.
+# 2. Apply. Email apply@ochk.io the signed envelope this writes, with answers.md
+#    attached too: the envelope carries only its hash.
 oc-guardian apply prepare --out application.json --questionnaire ./answers.md
 
 # 3. Once accepted and given a seat, review and ratify the federation's charter.
@@ -145,7 +146,7 @@ The portal at `ochk.app/me/operator` drives the same four calls for the seats or
 
 ## Lifecycle commands
 
-Every lifecycle stage of the program (application → exit) has a kit command. See [BYPASS.md](./BYPASS.md) for the mapping to the portal.
+Every lifecycle stage of the program (application → exit) has a kit command, except two steps only the portal signs today: claiming a seat a federation's creator holds for you (`ochk.app/me/operator/federations/<slug>`) and voting on a charter amendment (`ochk.app/me/operator/federations/<slug>/amendments`). See [BYPASS.md](./BYPASS.md) for the mapping to the portal.
 
 | Stage | Command |
 |---|---|
@@ -188,7 +189,7 @@ That key signs liveness and nothing else: not the charter, a payout claim, an ex
 
 ## Documentation
 
-- [`BYPASS.md`](./BYPASS.md) — every portal feature and its kit-only equivalent.
+- [`BYPASS.md`](./BYPASS.md) — the kit-only path for each portal step, and the two it lacks.
 - [`SECURITY.md`](./SECURITY.md) — threat model, key handling, what orangecheck sees and doesn't.
 - [`CHARTER-FORMAT.md`](./CHARTER-FORMAT.md) — charter document spec: the plain-text form the portal publishes, and the RFC 8785 form (not built).
 - [Source](https://github.com/orangecheck/oc-guardian-kit) — open source, MIT.
