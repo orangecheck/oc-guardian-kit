@@ -58,10 +58,10 @@ oc-guardian bind --did <your did:oc> --block-height <h> --block-hash <hash>
 #    attached too: the envelope carries only its hash.
 oc-guardian apply prepare --out application.json --questionnaire ./answers.md
 
-# 3. Once accepted and given a seat, review and ratify the federation's charter.
+# 3. Once accepted and given a seat, review and sign the federation's charter.
+#    ochk.app has no upload for the signature yet ("What is not built yet").
 oc-guardian charter fetch <federation-slug>
 oc-guardian charter sign <federation-slug> --out charter-sig.json
-oc-guardian charter publish --file charter-sig.json
 
 # 4. Run the guardian. Its settings come from the environment ("Running
 #    fedimintd"). Until DKG is done its setup must not be reachable from other
@@ -154,7 +154,7 @@ Every lifecycle stage of the program (application → exit) has a kit command, e
 | Onboarding | `oc-guardian init`, `oc-guardian register` (checks the registry), `oc-guardian bind` (binds the key to your ochk.app account) |
 | Federations | `oc-guardian federations list` (`join` and `leave` print the steps), `oc-guardian federation handover {offer, accept}` (a creator hands a federation to another operator) |
 | Ceremony | `oc-guardian ceremony {start, add-peer, dkg, status, finalize}` |
-| Charter | `oc-guardian charter {fetch, sign, publish}` |
+| Charter | `oc-guardian charter {fetch, sign}` (the signature has no upload yet) |
 | Run | `oc-guardian fedimintd {install, run, status}` |
 | Local state | `oc-guardian status` |
 | Incidents | `oc-guardian alerts post` |
@@ -165,7 +165,7 @@ Every lifecycle stage of the program (application → exit) has a kit command, e
 
 ## What needs the portal
 
-Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify-status`, `federations list` and `charter {fetch, sign, publish}`; `fedimintd run` posts its liveness reports to `OC_ATTESTATION_POST_URL` when that is set. `bind`, `alerts post`, `payouts claim`, `exit-handoff`, `exit-ratify`, `attest-delegate` and `federation handover {offer, accept}` sign locally and write a file you upload, signed in, on the ochk.app page the kit names (BYPASS.md, "Submitting what the kit signs"). `bind`, `exit-ratify` and `attest-delegate` need a recent bitcoin mainnet block (height and hash, within 6 of the tip). Everything else is local.
+Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify-status`, `federations list` and `charter {fetch, sign, publish}`; `fedimintd run` posts its liveness reports to `OC_ATTESTATION_POST_URL` when that is set. `bind`, `alerts post`, `payouts claim`, `exit-handoff`, `exit-ratify`, `attest-delegate` and `federation handover {offer, accept}` sign locally and write a file you upload, signed in, on the ochk.app page the kit names (BYPASS.md, "Submitting what the kit signs"). `charter sign` writes `charter-sig.json`, which has no upload yet ("What is not built yet"). `bind`, `exit-ratify` and `attest-delegate` need a recent bitcoin mainnet block (height and hash, within 6 of the tip). Everything else is local.
 
 ## Two fedimint behaviours to know
 
@@ -174,6 +174,7 @@ Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify
 
 ## What is not built yet
 
+- **Submitting a charter signature.** `charter sign` writes `charter-sig.json`, and ochk.app has no upload for it yet. `charter publish` sends it to `/api/operator/charter` without the signed-in ochk.app session that route asks for, so it is refused. Until an upload exists, only a key held in the portal can ratify a charter: a key from `init --key-file` can be imported there; the kit has no command that exports a key from the OS keychain.
 - **Hardware tokens.** `--hsm yubikey | ledger | passkey` is accepted and does nothing different: the key goes in the OS keychain (or the `--key-file` you gave). A hardware token that never releases the key is planned, not shipped.
 - **The portal bridge.** `oc-guardian bridge {enable, allow, disable, status}` only logs that it is a stub. Nothing subscribes to portal requests, and no allowlist is kept.
 - **Transports other than HTTPS.** `charter publish --transport` takes `https` only. `register` and `federations join` accept `--transport` and ignore it.

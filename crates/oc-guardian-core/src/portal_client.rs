@@ -6,11 +6,11 @@
 //!      federation directory, per-federation deep view, operator
 //!      marketplace). These are CORS-open at the portal layer and
 //!      need no authentication.
-//!   2. Submitting hardware-key-signed envelopes (charter sign,
-//!      payout claim, alert publish, exit handoff). The envelope
-//!      itself carries the authorization · the portal verifies the
-//!      Ed25519 signature against the operator's published pubkey
-//!      before accepting.
+//!   2. Posting a charter signature (`charter publish`). The portal
+//!      verifies the operator key's signature, and also asks for a
+//!      signed-in ochk.app session, which this client does not carry,
+//!      so it refuses the post today. The other envelopes the kit signs
+//!      are uploaded on ochk.app (BYPASS.md).
 //!   3. Verifying acceptance envelopes the portal issues back to the
 //!      operator (via `oc-guardian apply verify-acceptance`).
 //!
@@ -97,9 +97,8 @@ impl PortalClient {
         }
     }
 
-    /// POST a JSON body and deserialize the response body. Used for
-    /// signed-envelope submissions (charter-sign, payout-claim,
-    /// alert-publish, etc.).
+    /// POST a JSON body and deserialize the response body. Used by
+    /// `charter publish`.
     pub fn post_json<T: DeserializeOwned, B: Serialize>(&self, path: &str, body: &B) -> Result<T> {
         let url = self.url(path);
         debug!(%url, "portal-client POST");

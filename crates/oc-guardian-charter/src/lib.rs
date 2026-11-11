@@ -9,9 +9,10 @@
 //!
 //! Canonical form: the federation's `/api/operator/charter` endpoint
 //! returns the canonical hash + version + URL. The kit fetches that,
-//! produces a hardware-key-signed `ActionEnvelope` (action:
-//! charter-sign), and either writes it to disk for review (default)
-//! or publishes it back to the portal.
+//! produces an `ActionEnvelope` (action: charter-sign) signed with the
+//! operator key, and writes it to disk for review. ochk.app has no
+//! upload for it yet, and `publish` carries no signed-in session, which
+//! the portal's charter route asks for.
 //!
 //! This crate implements the kit-side of BYPASS.md §06 (charter
 //! fetch / sign / publish).
@@ -19,7 +20,7 @@
 //! ```text
 //! oc-guardian charter fetch <slug>          # see what would be signed
 //! oc-guardian charter sign <slug>           # produce charter-sig.json
-//! oc-guardian charter publish --file <path> # POST to portal
+//! oc-guardian charter publish --file <path> # POST, no session: refused
 //! ```
 
 use std::fs;
@@ -106,7 +107,7 @@ fn charter_to_sign(slug: &str, meta: Option<CharterMeta>) -> Result<CharterMeta>
 
 /// `oc-guardian charter sign <slug> --out <path>` · fetch the
 /// canonical charter meta, produce a charter-sign `ActionEnvelope`
-/// signed with the operator's hardware-backed key, write the envelope
+/// signed with the operator key, write the envelope
 /// JSON to disk. Idempotent · re-running produces a fresh envelope
 /// with a new nonce.
 ///
@@ -214,8 +215,8 @@ pub fn sign(slug: String, out: String, hsm: String) -> Result<()> {
     println!("operator   : {}", id.0);
     println!("expires_at : {}", envelope.payload.expires_at);
     println!();
-    println!("review the envelope, then publish with:");
-    println!("  oc-guardian charter publish --file {out}");
+    println!("ochk.app has no upload for a charter signature yet, so only a key held");
+    println!("in the portal can ratify a charter today.");
     Ok(())
 }
 

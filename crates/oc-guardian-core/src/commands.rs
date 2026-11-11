@@ -509,9 +509,10 @@ pub fn federations_join(slug: String, _transport: String) -> Result<()> {
     println!("    1. the federation's creator holds a guardian seat for you (after your application is accepted)");
     println!("    2. claim it with your operator key at ochk.app/me/operator/federations/{slug}");
     println!("       (the portal signs seat claims; the kit cannot yet)");
-    println!("    3. ratify the charter — that IS your join:");
+    println!("    3. ratify the charter — that IS your join. The kit signs it:");
     println!("         oc-guardian charter sign {slug}");
-    println!("         oc-guardian charter publish --file charter-sig.json");
+    println!("       but ochk.app has no upload for the signature yet, so only a key");
+    println!("       held in the portal can ratify a charter today");
     println!("    4. run DKG with your peers:  oc-guardian ceremony start --name <name> …");
     println!();
     Ok(())

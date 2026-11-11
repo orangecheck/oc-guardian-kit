@@ -42,7 +42,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Generate operator identity + register hardware token.
+    /// Generate the operator identity (OS keychain, or --key-file).
     /// Bypass for portal §02 (onboarding).
     Init(InitArgs),
 
@@ -277,12 +277,12 @@ enum CharterCommand {
     /// operator key involved. Run this first to review what `sign`
     /// would commit to.
     Fetch { slug: String },
-    /// Produce a hardware-key-signed charter ratification envelope.
+    /// Produce a charter ratification envelope signed with the operator key.
     /// Fetches the canonical charter meta from the portal, signs it
     /// with your operator key, writes the envelope JSON to disk.
     /// Idempotent · re-running produces a fresh envelope with a new
-    /// nonce. Review the output, then `oc-guardian charter publish`
-    /// to broadcast.
+    /// nonce. ochk.app has no upload for it yet, so only a key held
+    /// in the portal can ratify a charter today.
     Sign {
         /// Federation slug to ratify (e.g. `oc-me-v1`).
         slug: String,
@@ -294,10 +294,9 @@ enum CharterCommand {
         #[arg(long, default_value = "os-keychain")]
         hsm: String,
     },
-    /// Publish a previously-signed charter ratification envelope.
-    /// Reads the file produced by `charter sign` and POSTs it to the
-    /// portal's `/api/operator/charter` endpoint. Idempotent · the
-    /// portal returns the same signature row when called twice.
+    /// POST a signed charter ratification to `/api/operator/charter`.
+    /// That route also asks for a signed-in ochk.app session, which
+    /// this command does not carry, so the portal refuses it today.
     Publish {
         #[arg(long)]
         file: String,
