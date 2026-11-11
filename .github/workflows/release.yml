@@ -22,11 +22,11 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-24.04
           - target: aarch64-apple-darwin
-            os: macos-14
-          # GitHub retired the Intel macos-13 runners, and this leg queued
-          # forever on every tag. Cross-compile for Intel on Apple silicon.
+            os: macos-15
+          # GitHub retired the Intel macos-13 runners, and then macos-14.
+          # Cross-compile for Intel on Apple silicon.
           - target: x86_64-apple-darwin
-            os: macos-14
+            os: macos-15
     steps:
       - uses: actions/checkout@v5
       - name: install linux deps
@@ -63,6 +63,8 @@ jobs:
           file "$bin"
           if [ "${{ matrix.target }}" = x86_64-apple-darwin ]; then
             lipo -archs "$bin" | grep -qx x86_64
+            arch -x86_64 /usr/bin/true 2>/dev/null \
+              || sudo softwareupdate --install-rosetta --agree-to-license
             arch -x86_64 "$bin" --version
           else
             "$bin" --version
