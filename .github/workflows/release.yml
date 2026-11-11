@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*'
+  # A dispatch builds and smoke-tests the binaries and publishes nothing.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -87,9 +89,11 @@ jobs:
           fi
 
       - name: install cosign
+        if: github.ref_type == 'tag'
         uses: sigstore/cosign-installer@v3
 
       - name: cosign keyless sign
+        if: github.ref_type == 'tag'
         run: |
           cosign sign-blob --yes \
             --output-signature dist/oc-guardian-${{ matrix.target }}.sig \
@@ -98,6 +102,7 @@ jobs:
             dist/oc-guardian-${{ matrix.target }}.tar.gz
 
       - name: SLSA Level 3 provenance attestation
+        if: github.ref_type == 'tag'
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: dist/oc-guardian-${{ matrix.target }}.tar.gz
@@ -110,6 +115,7 @@ jobs:
 
   release:
     needs: build
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     steps:
       # Only the binary artifacts. docker/build-push-action also uploads a
@@ -134,6 +140,7 @@ jobs:
   # FEDIMINTD_SHA256, pinned to FEDIMINTD_VERSION).
   docker:
     name: guardian image · ghcr.io
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
