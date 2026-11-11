@@ -21,7 +21,7 @@ surface (CLI flags, action-envelope schemas, file paths under
   digest from the text it was served and refuses one that does not match,
   prints the amendment, and writes `{"vote": …}` to `amendment-vote.json`
   for upload on the amendments page. It votes from the lowest seat your
-  key holds unless `--seat` names one.
+  key fills unless `--seat` names one.
 - `crates/oc-guardian-core/test-fixtures/operator-signature-vectors.json`
   holds seat claims and votes made by me.ochk.io's own signers; the kit's
   tests produce the same bytes and signatures. oc-me-web carries the same
