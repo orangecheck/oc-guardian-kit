@@ -1,6 +1,6 @@
 # BYPASS.md — the kit-only path for each portal step
 
-**Audience:** operators who want to sign with the kit rather than with a key in the browser at the [`ochk.app/me/operator`](https://ochk.app/me/operator) portal. This document is a first-class artifact maintained at parity with the portal — a portal feature is **not done** until its bypass is documented and verified working. Three are not done: claiming a seat and voting on a charter amendment have no kit command yet, so only the portal signs them, and a charter signature the kit signs has no upload yet ([§06](#06--sign-the-federation-charter)).
+**Audience:** operators who want to sign with the kit rather than with a key in the browser at the [`ochk.app/me/operator`](https://ochk.app/me/operator) portal. This document is a first-class artifact maintained at parity with the portal — a portal feature is **not done** until its bypass is documented and verified working. One is not done: a charter signature the kit signs has no upload yet ([§06](#06--sign-the-federation-charter)).
 
 **Architectural commitment:** A guardian operating purely via the kit is **architecturally indistinguishable** at the federation layer from a guardian operating with the portal. Both produce the same envelopes, sign with the same operator key, and are accepted by federations and consumers identically.
 
@@ -15,7 +15,7 @@ Every row here is a portal route the operator might land on, paired with the kit
 | 01 | Apply to the program | `ochk.app/me/operator/apply`: paste your answers, signed with the key in your browser | Email `apply@ochk.io` the signed envelope `oc-guardian apply prepare` writes and your filled-in questionnaire — see [§01 below](#01--apply-to-the-program) |
 | 02 | Get accepted + onboarded | Portal registers the key in your browser | `oc-guardian init` (OS keychain, or `--key-file` on a server), then `oc-guardian bind` — see [§02](#02--get-accepted--onboarded) |
 | 03 | Discover federations seeking guardians | Portal lists federations with seats open | `oc-guardian federations list` (the same directory, read directly) — see [§03](#03--discover-federations-seeking-guardians) |
-| 04 | Join a federation | Portal mediates the seat and the charter | The seat the creator holds for you, a seat claim (the portal signs it; no kit command yet), and your charter ratification — see [§04](#04--join-a-federation) |
+| 04 | Join a federation | Portal mediates the seat and the charter | The seat the creator holds for you, your claim on it (`oc-guardian seat claim`, [§17](#17--take-a-seat-reserved-for-you)), and your charter ratification — see [§04](#04--join-a-federation) |
 | 05 | Run the DKG ceremony | Portal drives the setup API of the seats it hosts | `oc-guardian ceremony {start, add-peer, dkg, status, finalize}` on your own guardian — see [§05](#05--run-the-dkg-ceremony) |
 | 06 | Sign the federation charter | Portal renders the charter and asks your key to sign | `oc-guardian charter {fetch, sign}`; the signature has no upload yet — see [§06](#06--sign-the-federation-charter) |
 | 07 | Run the guardian | Portal shows install + run instructions | `oc-guardian fedimintd run` — see [§07](#07--run-the-guardian) |
@@ -28,7 +28,8 @@ Every row here is a portal route the operator might land on, paired with the kit
 | 14 | Let a hosted guardian attest | "Let this guardian attest" on the seat's hosted status | `oc-guardian attest-delegate --federation <slug> --seat <n> --attest-pubkey <hex> --block-height <h> --block-hash <hash>` — see [§14](#14--let-a-hosted-guardian-attest) |
 | 15 | Hand a federation to another operator | The handover section of the federation's page | `oc-guardian federation handover offer --federation <slug> --to <op-id>`, then the operator it names runs `… accept` — see [§15](#15--hand-a-federation-to-another-operator) |
 | 16 | Name a successor federation | None: guardians submit meta themselves | `oc-guardian meta successor --invite <fed1…> --expires <date> --message <text> --current <file>` — see [§16](#16--name-a-successor-federation) |
-| 17 | Vote on a charter amendment | The federation's amendments page, signed by the key in your browser | None yet: the kit has no vote command |
+| 17 | Take a seat reserved for you | "Claim this seat" on the federation's page, signed with the key in your browser | `oc-guardian seat claim <slug> <seat> --block-height <h> --block-hash <hash>` — see [§17](#17--take-a-seat-reserved-for-you) |
+| 18 | Vote on a charter amendment | The federation's amendments page, signed with the key in your browser | `oc-guardian amendment vote <slug> <amendment-id> {ratify, reject} --block-height <h> --block-hash <hash>` — see [§18](#18--vote-on-a-charter-amendment) |
 
 ---
 
@@ -117,7 +118,7 @@ This reads the public federation directory at `me.ochk.io/api/federations` (no a
 
 **Portal path:** the portal's seat and charter flow.
 
-**Bypass:** joining is three things, not one envelope. Once your application is accepted, the federation's creator holds a guardian seat for you (on the federations orangecheck creates, that is orangecheck). You claim the seat with your operator key on `ochk.app/me/operator/federations/<slug>`: only the portal signs a seat claim today, so this step has no bypass yet. Then you ratify the federation's charter ([§06](#06--sign-the-federation-charter)), which is your join. `oc-guardian federations join <slug>` prints those steps.
+**Bypass:** joining is three things, not one envelope. Once your application is accepted, the federation's creator holds a guardian seat for you (on the federations orangecheck creates, that is orangecheck). You claim the seat with your operator key: `oc-guardian seat claim` signs the claim, and you upload it on `ochk.app/me/operator/federations/<slug>` ([§17](#17--take-a-seat-reserved-for-you)). Then you ratify the federation's charter ([§06](#06--sign-the-federation-charter)), which is your join. `oc-guardian federations join <slug>` prints those steps.
 
 ---
 
@@ -327,9 +328,50 @@ fedimint-cli --our-id <your peer id> --password <admin password> module meta sub
 
 ---
 
+## §17 — Take a seat reserved for you
+
+**Portal path:** "Claim this seat" on `ochk.app/me/operator/federations/<slug>`.
+
+A federation's creator can hold a seat for your ochk.app account, filled meanwhile by the creator's placeholder key. You take it with a seat claim: your key's signature over the federation, the seat and a recent bitcoin block, so it cannot be moved to another seat or kept for later. Your key then fills the seat. Fedimint fixes the guardian set at the key ceremony, so this works only before it.
+
+**Bypass:**
+
+```sh
+# Bind the key to the account the seat is held for first (§02). The seat counts
+# from 0: the portal's "Seat 1" is 0.
+oc-guardian seat claim <slug> 0 \
+    --block-height <recent mainnet height> \
+    --block-hash <its hash>
+```
+
+Writes `seat-claim.json`, the body `/api/operator/federations/<slug>/seats/<n>/claim` takes. Upload it at `ochk.app/me/operator/federations/<slug>`, signed in to the account the seat is held for, within 6 blocks (about an hour) of the block.
+
+---
+
+## §18 — Vote on a charter amendment
+
+**Portal path:** `ochk.app/me/operator/federations/<slug>/amendments`.
+
+A vote is signed by the key that fills your seat, over the amendment's digest (the SHA-256 of its text) and a recent bitcoin block. The charter's `amendment_quorum` decides; a key counts once however many seats it fills.
+
+**Bypass:**
+
+```sh
+# Reads the amendment from me.ochk.io, prints it, and signs only when the
+# portal's digest is the digest of that text. --seat picks a seat; by default,
+# the lowest one your key fills.
+oc-guardian amendment vote <slug> <amd_… id> ratify \
+    --block-height <recent mainnet height> \
+    --block-hash <its hash>
+```
+
+Writes `amendment-vote.json`, the body `/api/operator/federations/<slug>/amendments/<id>/vote` takes. Upload it at `ochk.app/me/operator/federations/<slug>/amendments`, signed in to the account your key is bound to, within 6 blocks of the block.
+
+---
+
 ## How we test bypass parity
 
-Some of what the kit signs is pinned by a cross-language test, where bytes or a signature made by one side's code are checked by the other's: runtime attestations, settlement receipts, the operator id derived from a key, and attest delegations. The other envelopes (application, charter signature, payout claim, exit and ratification) are checked against the portal's validators by hand, not yet by a shared test.
+Some of what the kit signs is pinned by a cross-language test, where bytes or a signature made by one side's code are checked by the other's: runtime attestations, settlement receipts, the operator id derived from a key, attest delegations, and seat claims and amendment votes (`crates/oc-guardian-core/test-fixtures/operator-signature-vectors.json`, which oc-me-web's signers made and its tests hold them to). The other envelopes (application, charter signature, payout claim, exit and ratification) are checked against the portal's validators by hand, not yet by a shared test.
 
 There is no end-to-end bypass suite against a live federation yet. It runs on the test federation once that is up.
 
@@ -355,5 +397,7 @@ Each of these commands signs locally and writes a file. Upload it signed in, on 
 | `oc-guardian attest-delegate` | `attest-delegation.json` | `ochk.app/me/operator/federations/<slug>` |
 | `oc-guardian federation handover offer` | `creator-handover-offer.json` | `ochk.app/me/operator/federations/<slug>#handover` |
 | `oc-guardian federation handover accept` | `creator-handover-accept.json` | `ochk.app/me/operator/handovers` |
+| `oc-guardian seat claim` | `seat-claim.json` | `ochk.app/me/operator/federations/<slug>` |
+| `oc-guardian amendment vote` | `amendment-vote.json` | `ochk.app/me/operator/federations/<slug>/amendments` |
 
-A payouts claim, an exit and an attest delegation are accepted only from the account your key is bound to (§02).
+A payouts claim, an exit, an attest delegation and an amendment vote are accepted only from the account your key is bound to (§02); a seat claim only from the account the seat is held for, with your key bound to it.

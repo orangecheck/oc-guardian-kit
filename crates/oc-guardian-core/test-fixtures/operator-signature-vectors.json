@@ -1,0 +1,62 @@
+{
+    "about": "Signed by oc-me-web's signSeatClaim and signAmendmentVote with the private key 07 repeated 32 times. oc-guardian-kit signs the same bytes; each repo's tests hold its own signers to this file.",
+    "private_key": "0707070707070707070707070707070707070707070707070707070707070707",
+    "operator_pubkey": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+    "seat_claims": [
+        {
+            "bytes": "oc-me/seat-claim/v1\nfederation_slug: 12:oc-mutiny-v1\nseat_index: 2\noperator_pubkey: ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c\nblock_height: 900000\nblock_hash: abababababababababababababababababababababababababababababababab",
+            "claim": {
+                "federation_slug": "oc-mutiny-v1",
+                "seat_index": 2,
+                "block_height": 900000,
+                "block_hash": "abababababababababababababababababababababababababababababababab",
+                "operator_pubkey": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+                "sig": "5d6e8c0fd8fba4ddc815b05a5af8f4a44317fc5a01b93afbd5b78a41c63379e8996de2239271457883b27a4303417b758eedcbab6b27e8fe91b1e91dfa4b3a09"
+            }
+        }
+    ],
+    "amendments": [
+        {
+            "proposal": {
+                "federation_slug": "oc-mutiny-v1",
+                "id": "amd_Vq3x-9kLm_2bTz0w",
+                "parameter": "min_bond_sats_floor",
+                "proposed_value": "250000",
+                "title": "Raise the bond floor’s minimum",
+                "body": "Two lines.\nblock_hash: is text here, not a field. 250 000 sats ₿ 𝔹."
+            },
+            "bytes": "oc-me/amendment/v1\nfederation_slug: 12:oc-mutiny-v1\nid: 20:amd_Vq3x-9kLm_2bTz0w\nparameter: min_bond_sats_floor\nproposed_value: 6:250000\ntitle: 30:Raise the bond floor’s minimum\nbody: 68:Two lines.\nblock_hash: is text here, not a field. 250 000 sats ₿ 𝔹.",
+            "digest": "cd7c9127c34639d1a0a204ba85881e2191057c734fa08baebab6ad842e47c14c",
+            "votes": [
+                {
+                    "bytes": "oc-me/amendment-vote/v1\nfederation_slug: 12:oc-mutiny-v1\namendment_id: 20:amd_Vq3x-9kLm_2bTz0w\namendment_digest: cd7c9127c34639d1a0a204ba85881e2191057c734fa08baebab6ad842e47c14c\nseat_index: 2\noperator_pubkey: ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c\nchoice: ratify\nblock_height: 900001\nblock_hash: cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+                    "vote": {
+                        "federation_slug": "oc-mutiny-v1",
+                        "amendment_id": "amd_Vq3x-9kLm_2bTz0w",
+                        "amendment_digest": "cd7c9127c34639d1a0a204ba85881e2191057c734fa08baebab6ad842e47c14c",
+                        "seat_index": 2,
+                        "choice": "ratify",
+                        "block_height": 900001,
+                        "block_hash": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+                        "operator_pubkey": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+                        "sig": "8fd6ffc1116a7dcba509fd5c452332c338a585ab780385f1139c64eeee49b85d3e6245b6fc390c1d7a0a3ded5c6c3a6ea001864dc7a581ff5b0e814df19b9d01"
+                    }
+                },
+                {
+                    "bytes": "oc-me/amendment-vote/v1\nfederation_slug: 12:oc-mutiny-v1\namendment_id: 20:amd_Vq3x-9kLm_2bTz0w\namendment_digest: cd7c9127c34639d1a0a204ba85881e2191057c734fa08baebab6ad842e47c14c\nseat_index: 2\noperator_pubkey: ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c\nchoice: reject\nblock_height: 900001\nblock_hash: cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+                    "vote": {
+                        "federation_slug": "oc-mutiny-v1",
+                        "amendment_id": "amd_Vq3x-9kLm_2bTz0w",
+                        "amendment_digest": "cd7c9127c34639d1a0a204ba85881e2191057c734fa08baebab6ad842e47c14c",
+                        "seat_index": 2,
+                        "choice": "reject",
+                        "block_height": 900001,
+                        "block_hash": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+                        "operator_pubkey": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+                        "sig": "13561073a6cac0ecca9b6ae28c08ce278062534d3cdf0a534e87fd0aa3b63de1dc8173f16b584d17edeeab2a129f9a37a9a5a5e0f6b87a9ee68957bdb7e19506"
+                    }
+                }
+            ]
+        }
+    ]
+}

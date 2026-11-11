@@ -14,7 +14,7 @@ The kit's job is to let an operator stand up and run a Fedimint guardian without
 | Replay of operator-signed envelopes | Each envelope carries a nonce (unix seconds) and an expiry; the portal rejects a nonce equal to or lower than one it has seen. |
 | Confused-deputy attacks via portal | The portal bridge, which would carry portal requests to the kit, is not built; the kit acts on no portal request. |
 | Denial-of-service against guardian | Standard fedimintd posture. The kit adds nothing custodial; an outage moves no funds. |
-| orangecheck sunset / portal goes dark | The kit signs everything the portal signs but a seat claim and an amendment vote, without the portal; uploading what it signs needs ochk.app. Federation membership is by operator key. See [BYPASS.md](./BYPASS.md). |
+| orangecheck sunset / portal goes dark | The kit signs everything the portal signs, without the portal; uploading what it signs needs ochk.app, and a charter signature has no upload yet. Federation membership is by operator key. See [BYPASS.md](./BYPASS.md). |
 
 ## Key handling
 
@@ -72,4 +72,4 @@ sha256sum target/release/oc-guardian
 - **Not** a custody service. The kit doesn't hold funds. It coordinates an operator running their own `fedimintd`.
 - **Not** a backup service. Operators are responsible for their `fedimintd` state backups; the kit can configure them but doesn't store them.
 - **Not** a key escrow. There is no recovery path through orangecheck. If an operator loses their operator key and their `fedimintd` state, the federation continues with `N-1` guardians per its threshold; the operator exits via `oc-guardian exit-handoff`.
-- **Not** a portal-replacement guarantee. Operators who actively choose to use the portal get a different UX; bypass parity is the *capability* to sign without the portal (all but a seat claim and an amendment vote today, BYPASS.md), not that the kit's CLI matches the portal's UX surface-for-surface.
+- **Not** a portal-replacement guarantee. Operators who actively choose to use the portal get a different UX; bypass parity is the *capability* to sign without the portal (a charter signature has no upload yet, BYPASS.md), not that the kit's CLI matches the portal's UX surface-for-surface.

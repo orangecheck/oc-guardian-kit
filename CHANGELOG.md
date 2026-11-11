@@ -6,6 +6,27 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
+## 0.2.13 — 2026-11-11
+
+### Added
+
+- **`oc-guardian seat claim <slug> <seat>` signs a claim on a seat reserved
+  for you.** It writes `{"seat_claim": …}` to `seat-claim.json` by default,
+  for you to read and then upload on the federation's page in ochk.app.
+  `--block-height` and `--block-hash` name a recent block, as in `charter
+  sign`.
+- **`oc-guardian amendment vote <slug> <amendment-id> {ratify, reject}`
+  signs a vote on a charter amendment.** It reads the federation's
+  amendments from me.ochk.io (a signed-out read), computes the amendment's
+  digest from the text it was served and refuses one that does not match,
+  prints the amendment, and writes `{"vote": …}` to `amendment-vote.json`
+  for upload on the amendments page. It votes from the lowest seat your
+  key holds unless `--seat` names one.
+- `crates/oc-guardian-core/test-fixtures/operator-signature-vectors.json`
+  holds seat claims and votes made by me.ochk.io's own signers; the kit's
+  tests produce the same bytes and signatures. oc-me-web carries the same
+  file.
+
 ## 0.2.12 — 2026-11-11
 
 The same code as 0.2.11. The release workflow builds the macOS binaries on

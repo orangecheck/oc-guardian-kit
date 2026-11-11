@@ -507,8 +507,11 @@ pub fn federations_join(slug: String, _transport: String) -> Result<()> {
     println!();
     println!("  joining federation {slug}:");
     println!("    1. the federation's creator holds a guardian seat for you (after your application is accepted)");
-    println!("    2. claim it with your operator key at ochk.app/me/operator/federations/{slug}");
-    println!("       (the portal signs seat claims; the kit cannot yet)");
+    println!("    2. claim it with your operator key:");
+    println!(
+        "         oc-guardian seat claim {slug} <seat> --block-height <h> --block-hash <hash>"
+    );
+    println!("       and upload seat-claim.json at ochk.app/me/operator/federations/{slug}");
     println!("    3. ratify the charter — that IS your join. The kit signs it:");
     println!("         oc-guardian charter sign {slug}");
     println!("       but ochk.app has no upload for the signature yet, so only a key");
@@ -1160,6 +1163,397 @@ pub fn bind(did_oc: String, block_height: u64, block_hash: String, out: String) 
     Ok(())
 }
 
+/// A string's length as JavaScript counts it, in UTF-16 units: the portal's length prefixes.
+fn js_len(s: &str) -> usize {
+    s.encode_utf16().count()
+}
+
+fn field(name: &str, value: &str) -> String {
+    format!("{name}: {}:{value}", js_len(value))
+}
+
+/// A federation slug as the portal makes them: 3 to 64 of `a-z`, `0-9` and `-`.
+fn federation_slug(arg: &str) -> Result<&str> {
+    let slug = arg.trim();
+    let ok = (3..=64).contains(&slug.len())
+        && slug
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+    if !ok {
+        anyhow::bail!("`{slug}` is not a federation slug (3 to 64 of a-z, 0-9 and -)");
+    }
+    Ok(slug)
+}
+
+/// A seat claim: proof that the operator taking a seat reserved for them holds the key that will
+/// fill it. The federation, the seat and a recent block are inside the signed bytes, so it cannot
+/// be moved to another seat or kept for later. The portal's `SeatClaim`, field for field.
+#[derive(Debug, serde::Serialize)]
+pub struct SeatClaim {
+    pub federation_slug: String,
+    pub seat_index: u32,
+    pub operator_pubkey: String,
+    pub block_height: u64,
+    pub block_hash: String,
+    pub sig: String,
+}
+
+/// The bytes a seat claim signs. oc-me-web `canonicalSeatClaimBytes`, line for line; the shared
+/// vectors in test-fixtures pin it.
+fn seat_claim_bytes(
+    federation_slug: &str,
+    seat_index: u32,
+    operator_pubkey: &str,
+    block_height: u64,
+    block_hash: &str,
+) -> Vec<u8> {
+    [
+        "oc-me/seat-claim/v1".to_string(),
+        field("federation_slug", federation_slug),
+        format!("seat_index: {seat_index}"),
+        format!("operator_pubkey: {operator_pubkey}"),
+        format!("block_height: {block_height}"),
+        format!("block_hash: {block_hash}"),
+    ]
+    .join("\n")
+    .into_bytes()
+}
+
+fn sign_seat_claim(
+    signer: &dyn Signer,
+    federation: &str,
+    seat_index: u32,
+    block_height: u64,
+    block_hash: &str,
+) -> Result<SeatClaim> {
+    let slug = federation_slug(federation)?;
+    let block_hash = hex64(block_hash, "--block-hash")?;
+    let operator_pubkey = hex::encode(signer.pubkey().0);
+    let bytes = seat_claim_bytes(
+        slug,
+        seat_index,
+        &operator_pubkey,
+        block_height,
+        &block_hash,
+    );
+    let sig = signer.sign(&bytes).context("signing the seat claim")?;
+    Ok(SeatClaim {
+        federation_slug: slug.to_string(),
+        seat_index,
+        operator_pubkey,
+        block_height,
+        block_hash,
+        sig: hex::encode(sig),
+    })
+}
+
+/// `oc-guardian seat claim` · take the seat a federation's creator reserved for your account, with
+/// this key filling it. Only before the federation's key ceremony: its roster is fixed after.
+pub fn seat_claim(
+    federation: String,
+    seat_index: u32,
+    block_height: u64,
+    block_hash: String,
+    out: String,
+) -> Result<()> {
+    let (_id, signer) = load_operator()?;
+    let claim = sign_seat_claim(
+        signer.as_ref(),
+        &federation,
+        seat_index,
+        block_height,
+        &block_hash,
+    )?;
+    let json = serde_json::to_vec_pretty(&serde_json::json!({ "seat_claim": claim }))
+        .context("encoding the seat claim")?;
+    fs::write(&out, &json).with_context(|| format!("writing {out}"))?;
+    let slug = &claim.federation_slug;
+    println!();
+    println!("  ✓ signed seat claim written to {out}");
+    println!(
+        "    seat {seat_index} of {slug} · key {}",
+        claim.operator_pubkey
+    );
+    println!("    upload it at ochk.app/me/operator/federations/{slug}, signed in to the account");
+    println!("    the seat is held for, with this key bound to it (oc-guardian bind), within");
+    println!("    6 blocks (about an hour) of block {block_height}.");
+    println!();
+    Ok(())
+}
+
+/// A seat holder's vote on a charter amendment, signed by the key that fills the seat. The
+/// amendment's digest and a recent block are inside the signed bytes. The portal's
+/// `AmendmentVote`, field for field.
+#[derive(Debug, serde::Serialize)]
+pub struct AmendmentVote {
+    pub federation_slug: String,
+    pub amendment_id: String,
+    pub amendment_digest: String,
+    pub seat_index: u32,
+    pub operator_pubkey: String,
+    pub choice: String,
+    pub block_height: u64,
+    pub block_hash: String,
+    pub sig: String,
+}
+
+/// An amendment as the portal serves it: the text a vote commits to, and the portal's digest of it.
+#[derive(Debug, serde::Deserialize)]
+struct ServedAmendment {
+    id: String,
+    federation_slug: String,
+    parameter: String,
+    proposed_value: String,
+    title: String,
+    body: String,
+    state: String,
+    digest: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ServedSeat {
+    index: u32,
+    operator_pubkey: String,
+    #[serde(default)]
+    reserved: bool,
+}
+
+/// `GET /api/operator/federations/<slug>/amendments`, read signed out.
+#[derive(Debug, serde::Deserialize)]
+struct ServedAmendments {
+    seats: Vec<ServedSeat>,
+    proposals: Vec<ServedAmendment>,
+}
+
+/// The bytes an amendment's digest is taken over. oc-me-web `canonicalAmendmentBytes`.
+fn amendment_bytes(a: &ServedAmendment) -> Vec<u8> {
+    [
+        "oc-me/amendment/v1".to_string(),
+        field("federation_slug", &a.federation_slug),
+        field("id", &a.id),
+        format!("parameter: {}", a.parameter),
+        field("proposed_value", &a.proposed_value),
+        field("title", &a.title),
+        field("body", &a.body),
+    ]
+    .join("\n")
+    .into_bytes()
+}
+
+/// The bytes a vote signs. oc-me-web `canonicalAmendmentVoteBytes`, line for line; the shared
+/// vectors in test-fixtures pin it.
+#[allow(clippy::too_many_arguments)]
+fn amendment_vote_bytes(
+    federation_slug: &str,
+    amendment_id: &str,
+    amendment_digest: &str,
+    seat_index: u32,
+    operator_pubkey: &str,
+    choice: &str,
+    block_height: u64,
+    block_hash: &str,
+) -> Vec<u8> {
+    [
+        "oc-me/amendment-vote/v1".to_string(),
+        field("federation_slug", federation_slug),
+        field("amendment_id", amendment_id),
+        format!("amendment_digest: {amendment_digest}"),
+        format!("seat_index: {seat_index}"),
+        format!("operator_pubkey: {operator_pubkey}"),
+        format!("choice: {choice}"),
+        format!("block_height: {block_height}"),
+        format!("block_hash: {block_hash}"),
+    ]
+    .join("\n")
+    .into_bytes()
+}
+
+fn vote_choice(choice: &str) -> Result<&'static str> {
+    match choice.trim() {
+        "ratify" => Ok("ratify"),
+        "reject" => Ok("reject"),
+        other => anyhow::bail!("the choice is ratify or reject, not `{other}`"),
+    }
+}
+
+/// An amendment id as the portal makes them (amd_…).
+fn amendment_id(arg: &str) -> Result<&str> {
+    let id = arg.trim();
+    let ok = !id.is_empty()
+        && id.len() <= 64
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
+    if !ok {
+        anyhow::bail!("`{id}` is not an amendment id: use the amd_… id ochk.app shows");
+    }
+    Ok(id)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sign_amendment_vote(
+    signer: &dyn Signer,
+    federation: &str,
+    amendment: &str,
+    amendment_digest: &str,
+    seat_index: u32,
+    choice: &str,
+    block_height: u64,
+    block_hash: &str,
+) -> Result<AmendmentVote> {
+    let slug = federation_slug(federation)?;
+    let id = amendment_id(amendment)?;
+    let amendment_digest = hex64(amendment_digest, "the amendment digest")?;
+    let choice = vote_choice(choice)?;
+    let block_hash = hex64(block_hash, "--block-hash")?;
+    let operator_pubkey = hex::encode(signer.pubkey().0);
+    let bytes = amendment_vote_bytes(
+        slug,
+        id,
+        &amendment_digest,
+        seat_index,
+        &operator_pubkey,
+        choice,
+        block_height,
+        &block_hash,
+    );
+    let sig = signer.sign(&bytes).context("signing the vote")?;
+    Ok(AmendmentVote {
+        federation_slug: slug.to_string(),
+        amendment_id: id.to_string(),
+        amendment_digest,
+        seat_index,
+        operator_pubkey,
+        choice: choice.to_string(),
+        block_height,
+        block_hash,
+        sig: hex::encode(sig),
+    })
+}
+
+/// What a vote is cast on: the amendment the portal serves, with the digest of its text as the
+/// kit computes it, and the seat it is cast from. Refuses when the portal's own digest is not the
+/// digest of the text it served, so the kit never signs a digest it cannot read.
+fn vote_target<'a>(
+    served: &'a ServedAmendments,
+    slug: &str,
+    id: &str,
+    seat: Option<u32>,
+    operator_pubkey: &str,
+) -> Result<(&'a ServedAmendment, String, u32)> {
+    let a = served
+        .proposals
+        .iter()
+        .find(|p| p.id == id && p.federation_slug == slug)
+        .with_context(|| format!("{slug} has no amendment {id}"))?;
+    let digest = hex::encode(Sha256::digest(amendment_bytes(a)));
+    if a.digest.to_lowercase() != digest {
+        anyhow::bail!(
+            "the portal's digest for {id} is not the digest of the text it served, so nothing was signed"
+        );
+    }
+    if a.state != "proposed" && a.state != "balloting" {
+        anyhow::bail!("amendment {id} is {}: it takes no more votes", a.state);
+    }
+    let fills = |s: &ServedSeat| s.operator_pubkey.to_lowercase() == operator_pubkey;
+    let seat_index = match seat {
+        Some(n) => {
+            let s = served
+                .seats
+                .iter()
+                .find(|s| s.index == n)
+                .with_context(|| format!("{slug} has no seat {n}"))?;
+            if s.reserved {
+                anyhow::bail!(
+                    "seat {n} is held for an invited operator who has not taken it, so it votes for no guardian"
+                );
+            }
+            if !fills(s) {
+                anyhow::bail!("seat {n} of {slug} is filled by another key");
+            }
+            n
+        }
+        None => served
+            .seats
+            .iter()
+            .filter(|s| fills(s) && !s.reserved)
+            .map(|s| s.index)
+            .min()
+            .with_context(|| format!("your key fills no seat of {slug} that votes"))?,
+    };
+    Ok((a, digest, seat_index))
+}
+
+/// Served text, printed so a control character in it cannot rewrite the terminal.
+fn printable(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            let hidden = c.is_control()
+                || matches!(c as u32, 0x200B..=0x200F | 0x202A..=0x202E | 0x2066..=0x2069 | 0xFEFF);
+            if c != '\n' && hidden {
+                c.escape_unicode().to_string()
+            } else {
+                c.to_string()
+            }
+        })
+        .collect()
+}
+
+/// `oc-guardian amendment vote` · vote on a charter amendment with the key that fills your seat.
+/// Reads the amendment from the portal, prints it, and signs only when the portal's digest is the
+/// digest of that text.
+#[allow(clippy::too_many_arguments)]
+pub fn amendment_vote(
+    federation: String,
+    amendment: String,
+    choice: String,
+    seat: Option<u32>,
+    block_height: u64,
+    block_hash: String,
+    out: String,
+) -> Result<()> {
+    use crate::portal_client::PortalClient;
+
+    let slug = federation_slug(&federation)?;
+    let id = amendment_id(&amendment)?;
+    let choice = vote_choice(&choice)?;
+    let (_op, signer) = load_operator()?;
+    let me = hex::encode(signer.pubkey().0);
+    let served: ServedAmendments = PortalClient::from_env(None)
+        .get_json(&format!("/api/operator/federations/{slug}/amendments"))
+        .with_context(|| format!("reading the amendments of {slug}"))?;
+    let (a, digest, seat_index) = vote_target(&served, slug, id, seat, &me)?;
+    let vote = sign_amendment_vote(
+        signer.as_ref(),
+        slug,
+        id,
+        &digest,
+        seat_index,
+        choice,
+        block_height,
+        &block_hash,
+    )?;
+    let json = serde_json::to_vec_pretty(&serde_json::json!({ "vote": vote }))
+        .context("encoding the vote")?;
+    fs::write(&out, &json).with_context(|| format!("writing {out}"))?;
+    println!();
+    println!("  amendment {id} of {slug} ({})", printable(&a.state));
+    println!("    parameter : {}", printable(&a.parameter));
+    println!("    proposed  : {}", printable(&a.proposed_value));
+    println!("    title     : {}", printable(&a.title));
+    for line in printable(&a.body).lines() {
+        println!("    | {line}");
+    }
+    println!("    digest    : {digest}");
+    println!();
+    println!("  ✓ signed {choice} vote from seat {seat_index} written to {out}");
+    println!("    upload it at ochk.app/me/operator/federations/{slug}/amendments, signed in to");
+    println!("    the account your key is bound to (oc-guardian bind), within 6 blocks (about");
+    println!("    an hour) of block {block_height}.");
+    println!();
+    Ok(())
+}
+
 /// How long a handover offer stands unless `--valid-days` says otherwise.
 pub const HANDOVER_OFFER_DEFAULT_DAYS: u64 = 7;
 /// The longest `--valid-days` takes; the portal refuses expiries past 31 days.
@@ -1476,6 +1870,196 @@ mod tests {
         }
         assert!(sign_bind_claim(&signer, "did:oc:ab12", 1, "zz").is_err());
         assert!(sign_bind_claim(&signer, "did:oc:ab12", 1, &hash).is_ok());
+    }
+
+    /// Made by oc-me-web's own signers; the same file is in its fixtures, held to its signers there.
+    fn vectors() -> serde_json::Value {
+        serde_json::from_str(include_str!(
+            "../test-fixtures/operator-signature-vectors.json"
+        ))
+        .unwrap()
+    }
+
+    fn text(v: &serde_json::Value) -> &str {
+        v.as_str().unwrap()
+    }
+
+    fn num(v: &serde_json::Value) -> u64 {
+        v.as_u64().unwrap()
+    }
+
+    fn served(proposal: &serde_json::Value, state: &str, digest: &str) -> ServedAmendment {
+        ServedAmendment {
+            id: text(&proposal["id"]).into(),
+            federation_slug: text(&proposal["federation_slug"]).into(),
+            parameter: text(&proposal["parameter"]).into(),
+            proposed_value: text(&proposal["proposed_value"]).into(),
+            title: text(&proposal["title"]).into(),
+            body: text(&proposal["body"]).into(),
+            state: state.into(),
+            digest: digest.into(),
+        }
+    }
+
+    #[test]
+    fn seat_claims_match_the_portals_signer() {
+        let v = vectors();
+        let signer = keychain::StaticSigner::from_hex(text(&v["private_key"])).unwrap();
+        for case in v["seat_claims"].as_array().unwrap() {
+            let want = &case["claim"];
+            let c = sign_seat_claim(
+                &signer,
+                text(&want["federation_slug"]),
+                num(&want["seat_index"]) as u32,
+                num(&want["block_height"]),
+                &text(&want["block_hash"]).to_uppercase(),
+            )
+            .unwrap();
+            let bytes = seat_claim_bytes(
+                &c.federation_slug,
+                c.seat_index,
+                &c.operator_pubkey,
+                c.block_height,
+                &c.block_hash,
+            );
+            assert_eq!(String::from_utf8(bytes).unwrap(), text(&case["bytes"]));
+            assert_eq!(serde_json::to_value(&c).unwrap(), *want);
+        }
+    }
+
+    #[test]
+    fn amendment_votes_match_the_portals_signer() {
+        let v = vectors();
+        let signer = keychain::StaticSigner::from_hex(text(&v["private_key"])).unwrap();
+        for case in v["amendments"].as_array().unwrap() {
+            let a = served(&case["proposal"], "balloting", text(&case["digest"]));
+            // The length prefixes count UTF-16 units, as the portal's do, not bytes.
+            assert_ne!(a.body.len(), js_len(&a.body));
+            assert_eq!(
+                String::from_utf8(amendment_bytes(&a)).unwrap(),
+                text(&case["bytes"])
+            );
+            assert_eq!(
+                hex::encode(Sha256::digest(amendment_bytes(&a))),
+                text(&case["digest"])
+            );
+            for each in case["votes"].as_array().unwrap() {
+                let want = &each["vote"];
+                let vote = sign_amendment_vote(
+                    &signer,
+                    text(&want["federation_slug"]),
+                    text(&want["amendment_id"]),
+                    text(&want["amendment_digest"]),
+                    num(&want["seat_index"]) as u32,
+                    text(&want["choice"]),
+                    num(&want["block_height"]),
+                    &text(&want["block_hash"]).to_uppercase(),
+                )
+                .unwrap();
+                let bytes = amendment_vote_bytes(
+                    &vote.federation_slug,
+                    &vote.amendment_id,
+                    &vote.amendment_digest,
+                    vote.seat_index,
+                    &vote.operator_pubkey,
+                    &vote.choice,
+                    vote.block_height,
+                    &vote.block_hash,
+                );
+                assert_eq!(String::from_utf8(bytes).unwrap(), text(&each["bytes"]));
+                assert_eq!(serde_json::to_value(&vote).unwrap(), *want);
+            }
+        }
+    }
+
+    #[test]
+    fn seat_claims_and_votes_refuse_what_the_portal_would() {
+        let signer = keychain::StaticSigner::from_hex(&"07".repeat(32)).unwrap();
+        let hash = "ab".repeat(32);
+        for slug in ["", "ab", "Oc-Me-V1", "oc me", "oc/me/v1", "oc-mé-v1"] {
+            assert!(
+                sign_seat_claim(&signer, slug, 0, 1, &hash).is_err(),
+                "{slug:?}"
+            );
+        }
+        assert!(sign_seat_claim(&signer, "oc-me-v1", 0, 1, "zz").is_err());
+        assert!(sign_seat_claim(&signer, " oc-me-v1 ", 0, 1, &hash).is_ok());
+        let digest = "cd".repeat(32);
+        let vote = |id: &str, digest: &str, choice: &str| {
+            sign_amendment_vote(&signer, "oc-me-v1", id, digest, 0, choice, 1, &hash)
+        };
+        assert!(vote("amd_x", &digest, "ratify").is_ok());
+        assert!(vote("amd_x", &digest, "abstain").is_err());
+        assert!(vote("amd_x", "cd", "reject").is_err());
+        for id in ["", "amd x", "amd/x", "amd_x\nchoice: ratify"] {
+            assert!(vote(id, &digest, "reject").is_err(), "{id:?}");
+        }
+    }
+
+    #[test]
+    fn a_vote_is_cast_only_on_text_whose_digest_the_kit_computed() {
+        let v = vectors();
+        let case = &v["amendments"][0];
+        let digest = text(&case["digest"]);
+        let me = text(&v["operator_pubkey"]);
+        let seat = |index: u32, key: &str, reserved: bool| ServedSeat {
+            index,
+            operator_pubkey: key.into(),
+            reserved,
+        };
+        let other = "ee".repeat(32);
+        let roster = || {
+            vec![
+                seat(0, &other, false),
+                seat(1, me, true),
+                seat(2, &me.to_uppercase(), false),
+                seat(3, me, false),
+            ]
+        };
+        let at = |state: &str, digest: &str| ServedAmendments {
+            seats: roster(),
+            proposals: vec![served(&case["proposal"], state, digest)],
+        };
+        let id = text(&case["proposal"]["id"]);
+        let slug = text(&case["proposal"]["federation_slug"]);
+
+        let ok = at("balloting", digest);
+        let (_, d, n) = vote_target(&ok, slug, id, None, me).unwrap();
+        assert_eq!(
+            (d.as_str(), n),
+            (digest, 2),
+            "the lowest seat the key fills that votes"
+        );
+        assert_eq!(vote_target(&ok, slug, id, Some(3), me).unwrap().2, 3);
+        assert!(
+            vote_target(&ok, slug, id, Some(1), me).is_err(),
+            "a held seat"
+        );
+        assert!(
+            vote_target(&ok, slug, id, Some(0), me).is_err(),
+            "another key's seat"
+        );
+        assert!(
+            vote_target(&ok, slug, id, Some(9), me).is_err(),
+            "no such seat"
+        );
+        assert!(vote_target(&ok, slug, "amd_other", None, me).is_err());
+        assert!(vote_target(&ok, "oc-other-v1", id, None, me).is_err());
+        assert!(vote_target(&at("proposed", digest), slug, id, None, me).is_ok());
+        assert!(vote_target(&at("ratified", digest), slug, id, None, me).is_err());
+        let wrong = at("balloting", &"00".repeat(32));
+        let refused = vote_target(&wrong, slug, id, None, me).unwrap_err();
+        assert!(refused.to_string().contains("not the digest of the text"));
+        let mut edited = at("balloting", digest);
+        edited.proposals[0].proposed_value = "1".into();
+        assert!(vote_target(&edited, slug, id, None, me).is_err());
+        assert!(vote_target(&ok, slug, id, None, &other).unwrap().2 == 0);
+    }
+
+    #[test]
+    fn served_text_prints_without_its_control_characters() {
+        let shown = printable("a\u{1b}[2Jb\nc\u{202e}d");
+        assert_eq!(shown, "a\\u{1b}[2Jb\nc\\u{202e}d");
     }
 
     /// Write the envelope as the command does, read the file back, and check

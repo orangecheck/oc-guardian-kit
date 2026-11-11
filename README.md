@@ -1,6 +1,6 @@
 # oc-guardian-kit
 
-**The operator's own tooling for running a Fedimint guardian in an orangecheck federation.** Self-serve. Composes with `fedimintd` rather than replacing it. Optional companion to the [`ochk.app/me/operator`](https://ochk.app/me/operator) portal: the kit signs everything the portal signs but two, without a key in the browser. Claiming a seat and voting on a charter amendment are signed only in the portal today.
+**The operator's own tooling for running a Fedimint guardian in an orangecheck federation.** Self-serve. Composes with `fedimintd` rather than replacing it. Optional companion to the [`ochk.app/me/operator`](https://ochk.app/me/operator) portal: the kit signs everything the portal signs, without a key in the browser. A charter signature it signs has no upload yet ("What is not built yet").
 
 > **Where things stand.** While the system is in testing, orangecheck holds every role, guardian seats included: it runs every test seat, on its own hardware, with its own keys ([ochk.app/custody](https://ochk.app/custody) shows the live picture). The kit is how independent operators take those seats over. orangecheck as the lasting operator is never the design.
 >
@@ -58,8 +58,11 @@ oc-guardian bind --did <your did:oc> --block-height <h> --block-hash <hash>
 #    attached too: the envelope carries only its hash.
 oc-guardian apply prepare --out application.json --questionnaire ./answers.md
 
-# 3. Once accepted and given a seat, review and sign the federation's charter.
-#    ochk.app has no upload for the signature yet ("What is not built yet").
+# 3. Once accepted, claim the seat the federation's creator holds for you, and
+#    upload the seat-claim.json it writes on the federation's page in ochk.app.
+oc-guardian seat claim <federation-slug> <seat> --block-height <h> --block-hash <hash>
+#    Review and sign the federation's charter. ochk.app has no upload for the
+#    signature yet ("What is not built yet").
 oc-guardian charter fetch <federation-slug>
 oc-guardian charter sign <federation-slug> --out charter-sig.json
 
@@ -146,15 +149,17 @@ The portal at `ochk.app/me/operator` drives the same four calls for the seats or
 
 ## Lifecycle commands
 
-Every lifecycle stage of the program (application → exit) has a kit command, except two steps only the portal signs today: claiming a seat a federation's creator holds for you (`ochk.app/me/operator/federations/<slug>`) and voting on a charter amendment (`ochk.app/me/operator/federations/<slug>/amendments`). See [BYPASS.md](./BYPASS.md) for the mapping to the portal.
+Every lifecycle stage of the program (application → exit) has a kit command. See [BYPASS.md](./BYPASS.md) for the mapping to the portal.
 
 | Stage | Command |
 |---|---|
 | Application | `oc-guardian apply {prepare, verify-acceptance}` |
 | Onboarding | `oc-guardian init`, `oc-guardian register` (checks the registry), `oc-guardian bind` (binds the key to your ochk.app account) |
 | Federations | `oc-guardian federations list` (`join` and `leave` print the steps), `oc-guardian federation handover {offer, accept}` (a creator hands a federation to another operator) |
+| Seats | `oc-guardian seat claim <slug> <seat>` (take a seat reserved for you, before the ceremony) |
 | Ceremony | `oc-guardian ceremony {start, add-peer, dkg, status, finalize}` |
 | Charter | `oc-guardian charter {fetch, sign}` (the signature has no upload yet) |
+| Amendments | `oc-guardian amendment vote <slug> <amendment-id> {ratify, reject}` |
 | Run | `oc-guardian fedimintd {install, run, status}` |
 | Local state | `oc-guardian status` |
 | Incidents | `oc-guardian alerts post` |
@@ -165,7 +170,7 @@ Every lifecycle stage of the program (application → exit) has a kit command, e
 
 ## What needs the portal
 
-Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify-status`, `federations list` and `charter {fetch, sign, publish}`; `fedimintd run` posts its liveness reports to `OC_ATTESTATION_POST_URL` when that is set. `bind`, `alerts post`, `payouts claim`, `exit-handoff`, `exit-ratify`, `attest-delegate` and `federation handover {offer, accept}` sign locally and write a file you upload, signed in, on the ochk.app page the kit names (BYPASS.md, "Submitting what the kit signs"). `charter sign` writes `charter-sig.json`, which has no upload yet ("What is not built yet"). `bind`, `exit-ratify` and `attest-delegate` need a recent bitcoin mainnet block (height and hash, within 6 of the tip). Everything else is local.
+Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify-status`, `federations list`, `charter {fetch, sign, publish}` and `amendment vote`, which reads the amendment it signs; `fedimintd run` posts its liveness reports to `OC_ATTESTATION_POST_URL` when that is set. `bind`, `alerts post`, `payouts claim`, `exit-handoff`, `exit-ratify`, `attest-delegate`, `federation handover {offer, accept}`, `seat claim` and `amendment vote` sign locally and write a file you upload, signed in, on the ochk.app page the kit names (BYPASS.md, "Submitting what the kit signs"). `charter sign` writes `charter-sig.json`, which has no upload yet ("What is not built yet"). `bind`, `exit-ratify`, `attest-delegate`, `seat claim` and `amendment vote` need a recent bitcoin mainnet block (height and hash, within 6 of the tip). Everything else is local.
 
 ## Two fedimint behaviours to know
 
@@ -190,7 +195,7 @@ That key signs liveness and nothing else: not the charter, a payout claim, an ex
 
 ## Documentation
 
-- [`BYPASS.md`](./BYPASS.md) — the kit-only path for each portal step, and the two it lacks.
+- [`BYPASS.md`](./BYPASS.md) — the kit-only path for each portal step.
 - [`SECURITY.md`](./SECURITY.md) — threat model, key handling, what orangecheck sees and doesn't.
 - [`CHARTER-FORMAT.md`](./CHARTER-FORMAT.md) — charter document spec: the plain-text form the portal publishes, and the RFC 8785 form (not built).
 - [Source](https://github.com/orangecheck/oc-guardian-kit) — open source, MIT.

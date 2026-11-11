@@ -22,9 +22,8 @@ use tracing::info;
     long_about = "Self-serve provisioning + operations toolkit for running an \
                   OC-affiliated Fedimint guardian. Optional companion to the \
                   operator portal at ochk.app/me/operator — the kit signs \
-                  everything the portal signs but a seat claim and an \
-                  amendment vote, and most of what it signs is uploaded on \
-                  ochk.app, signed in. See BYPASS.md for the canonical mapping."
+                  everything the portal signs, and most of what it signs is \
+                  uploaded on ochk.app, signed in. See BYPASS.md for the canonical mapping."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -110,6 +109,14 @@ enum Command {
     /// Bind your operator key to your ochk.app account, without the key
     /// entering a browser. Writes a file to upload at ochk.app/me/operator.
     Bind(BindArgs),
+
+    /// Take a guardian seat reserved for you, with your key filling it.
+    #[command(subcommand)]
+    Seat(SeatCommand),
+
+    /// Vote on a charter amendment with the key that fills your seat.
+    #[command(subcommand)]
+    Amendment(AmendmentCommand),
 
     /// Portal bridge: not built yet. Its commands change nothing; run each
     /// action with its own command.
@@ -468,6 +475,53 @@ struct BindArgs {
 }
 
 #[derive(Subcommand)]
+enum SeatCommand {
+    /// Sign a claim to the seat a federation's creator reserved for your ochk.app account. Upload
+    /// the file at ochk.app/me/operator/federations/<slug>; your key then fills the seat. Only
+    /// before the federation's key ceremony.
+    Claim {
+        /// The federation's slug.
+        federation: String,
+        /// The seat's index from 0: ochk.app's "Seat 1" is 0.
+        seat: u32,
+        /// A recent bitcoin mainnet block's height and hash (within 6 of the tip), even for a
+        /// federation on signet or testnet: the portal dates what you sign against mainnet.
+        #[arg(long)]
+        block_height: u64,
+        #[arg(long)]
+        block_hash: String,
+        #[arg(long, default_value = "seat-claim.json")]
+        out: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum AmendmentCommand {
+    /// Sign your vote on a charter amendment. Reads the amendment from the portal, prints it, and
+    /// signs only when the portal's digest is the digest of that text. Upload the file at
+    /// ochk.app/me/operator/federations/<slug>/amendments.
+    Vote {
+        /// The federation's slug.
+        federation: String,
+        /// The amendment's id (amd_…), as ochk.app shows it.
+        amendment: String,
+        #[arg(value_parser = ["ratify", "reject"])]
+        choice: String,
+        /// The seat you vote from, from 0. Default: the lowest seat your key fills.
+        #[arg(long)]
+        seat: Option<u32>,
+        /// A recent bitcoin mainnet block's height and hash (within 6 of the tip), even for a
+        /// federation on signet or testnet: the portal dates what you sign against mainnet.
+        #[arg(long)]
+        block_height: u64,
+        #[arg(long)]
+        block_hash: String,
+        #[arg(long, default_value = "amendment-vote.json")]
+        out: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum BridgeCommand {
     /// Not built yet: changes nothing, and the portal cannot reach this kit.
     Enable,
@@ -630,6 +684,32 @@ fn main() -> Result<()> {
         Command::Bind(args) => {
             oc_guardian_core::commands::bind(args.did, args.block_height, args.block_hash, args.out)
         }
+        Command::Seat(SeatCommand::Claim {
+            federation,
+            seat,
+            block_height,
+            block_hash,
+            out,
+        }) => {
+            oc_guardian_core::commands::seat_claim(federation, seat, block_height, block_hash, out)
+        }
+        Command::Amendment(AmendmentCommand::Vote {
+            federation,
+            amendment,
+            choice,
+            seat,
+            block_height,
+            block_hash,
+            out,
+        }) => oc_guardian_core::commands::amendment_vote(
+            federation,
+            amendment,
+            choice,
+            seat,
+            block_height,
+            block_hash,
+            out,
+        ),
         Command::Bridge(cmd) => match cmd {
             BridgeCommand::Enable => oc_guardian_portal_bridge::enable(),
             BridgeCommand::Allow { action } => oc_guardian_portal_bridge::allow(action),
