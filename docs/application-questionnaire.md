@@ -16,15 +16,15 @@ Then email `application.json` and this file, filled in, to `apply@ochk.io`. The 
 
 ## §A — Identity
 
-A1. **Operator handle** (public; how you'll be listed in charters):
+A1. **Operator handle** (public; listed beside your operator key in each charter you sign):
 
-A2. **Operator legal entity** (required; person OR org. if person, just your legal name; if org, the registered legal name + jurisdiction of incorporation):
+A2. **Operator legal entity** (required; person OR org. if person, just your legal name; if org, the registered legal name + jurisdiction of incorporation. For the review only: it is not published, in a charter or anywhere else):
 
-A3. **Public contact channel** (Nostr npub OR HTTPS endpoint OR PGP-secured email — pick one; will be embedded in charters and used for incident comms):
+A3. **Public contact channel** (Nostr npub OR HTTPS endpoint OR PGP-secured email — pick one; listed in each charter you sign and used for incident comms):
 
 A4. **PGP fingerprint** (optional; 40-hex-char fingerprint of a key you control. Nothing in the program uses it yet: there is no PGP path for charter signing or anything else):
 
-A5. **Geographic jurisdiction** (country + region):
+A5. **Geographic jurisdiction** (country + region; for the review only, not published):
 
 A6. **Conflicts of interest disclosure** (any affiliation with OrangeCheck, with another OC-affiliated guardian, with a Fedimint federation, or with a major Bitcoin custodian — disclose all; conflicts don't disqualify, but undisclosed conflicts do):
 
@@ -72,7 +72,7 @@ D3. **References** (two people who can vouch for your operational competence; id
 
 ## §E — Acknowledgements
 
-E1. I understand that if accepted, I will be listed publicly in any charter I sign, with my legal entity, jurisdiction, and contact channel. ☐ yes
+E1. I understand that if accepted, each charter I sign lists my operator handle, my public contact channel and my operator key. My legal entity and jurisdiction are kept for the review and are not published. ☐ yes
 
 E2. I understand that I am responsible for my own infrastructure, my own operator key, and my own `fedimintd` lifecycle. orangecheck's servers never receive my operator key, and orangecheck cannot recover it on my behalf. A key I keep in ochk.app's browser storage can be read by the script ochk.app serves, which orangecheck deploys; the kit keeps the key in my OS keychain or a key file, outside any page. If I choose hosted hardware, orangecheck runs that machine. ☐ yes
 

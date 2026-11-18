@@ -34,7 +34,6 @@ pub struct RegistryEntry {
     pub pubkey: OperatorPubKey,
     pub display_handle: String,
     pub joined_at: String,
-    pub jurisdiction: String,
     /// Public contact channel — Nostr npub, email, or HTTPS endpoint
     /// the operator publishes signed status payloads at.
     pub public_channel: String,

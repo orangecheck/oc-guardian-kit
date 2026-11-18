@@ -21,17 +21,15 @@ threshold:
   n: 4
 guardians:
   - operator_id: op-3f7a8b2e
-    legal_entity: Example Guardian One Ltd
-    jurisdiction: KE
+    handle: riverside-one
+    operator_pubkey: 3f7a8b2e...
     api_endpoint: https://guard-1.example.org/api
     contact: security@example.org
-    pgp_fingerprint: 2A4F 1B3D 5E7C 9A0F 1234 5678 ABCD EF01 23 45 6789
   - operator_id: op-9c2d1e4f
-    legal_entity: Example Guardian Two Inc
-    jurisdiction: US-NY
+    handle: riverside-two
+    operator_pubkey: 9c2d1e4f...
     api_endpoint: https://guard-2.example.com/api
     contact: ops@example.com
-    pgp_fingerprint: 1C3E 5F7A 8B0D 2F4E 1234 5678 ABCD EF01 23 45 6789
   # ... 4 entries for a 3-of-4 federation
 gateways:
   - operator: Example Gateway Co
@@ -106,7 +104,7 @@ A charter must include these sections to be acceptable for the OC operator progr
 |---|---|---|
 | Identity (federation_name, federation_id, ratified_at) | ✓ | — |
 | Custody promise (threshold, m-of-n) | ✓ | + prose explanation |
-| Guardian disclosures (entity, jurisdiction, contact, fingerprint) | ✓ per guardian | + per-guardian short bio |
+| Guardian disclosures (handle, contact channel, operator key) | ✓ per guardian | + per-guardian short bio |
 | OC's role | — | "OC the company is a client of this federation, not a guardian" — verbatim or equivalent |
 | Lightning gateway disclosure | ✓ per gateway | + fee schedule reference |
 | Exit clause (sunset, amendment) | ✓ | + prose explanation; it states the exit that is built and working for this federation's users, not a planned one |
@@ -114,6 +112,8 @@ A charter must include these sections to be acceptable for the OC operator progr
 | Amendment process | ✓ | + ratification flow |
 
 Operators should not sign a charter missing a required section.
+
+A charter names each guardian by handle, contact channel and operator key, so anyone depositing can see who holds a seat and reach them. An operator's legal entity and jurisdiction go to the program's review with the application and are not published. A portal-published charter (below) lists only each seat's operator key so far; its handle and contact channel join it before the first operator from outside orangecheck is seated.
 
 ## Required §1 property checks
 
