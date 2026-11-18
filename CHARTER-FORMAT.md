@@ -113,7 +113,7 @@ A charter must include these sections to be acceptable for the OC operator progr
 
 Operators should not sign a charter missing a required section.
 
-A charter names each guardian by handle, contact channel and operator key, so anyone depositing can see who holds a seat and reach them. An operator's legal entity and jurisdiction go to the program's review with the application and are not published. A portal-published charter (below) lists only each seat's operator key so far; its handle and contact channel join it before the first operator from outside orangecheck is seated.
+A charter names each guardian by handle, contact channel and operator key, so anyone depositing can see who holds a seat and reach them. An operator's legal entity and jurisdiction go to the program's review with the application and are not published. A portal-published charter (below) lists each seat's operator key, handle and contact channel, `(none)` where its operator set none.
 
 ## Required §1 property checks
 
