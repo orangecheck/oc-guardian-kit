@@ -93,7 +93,12 @@ Settings come from the environment:
 | `OC_P2P_PORT`, `OC_API_PORT`, `OC_UI_PORT` | no | 9000, 9001, 8175 |
 | `FM_BIND_P2P`, `FM_BIND_API`, `FM_BIND_UI`, `FM_P2P_URL`, `FM_API_URL`, `FM_DATA_DIR` | no | fedimintd's own settings. Set them and the kit passes them through unchanged. |
 | `OC_GUARDIAN_SETUP_PASSWORD` | no | turns on the setup gate (below) until DKG is done |
+| `FM_PASSWORD` | no | the guardian password without the setup gate, the same variable `ceremony` reads. Set both and they must match. |
 | `OC_GUARDIAN_NAME`, and on the leader `OC_FEDERATION_NAME` + `OC_FEDERATION_SIZE` | no | with the setup password: the kit sets this guardian's local params itself |
+
+The kit hands the guardian password (`OC_GUARDIAN_SETUP_PASSWORD`, else `FM_PASSWORD`) to fedimintd as `FM_PASSWORD_API` and `FM_PASSWORD_UI`: fedimintd 0.12 and later take the admin password from those, and 0.11 ignores them. Once a guardian is set up, `fedimintd run` refuses to start if that password differs from the one fedimintd keeps in `<FM_DATA_DIR>/password.private`.
+
+Every start also sets what a federation set up through the kit runs: `FM_ENABLE_IROH=false` (the TCP/TLS stack), `FM_ENABLE_MODULE_LNV1`, `FM_ENABLE_MODULE_MINT` and `FM_ENABLE_MODULE_WALLET` true, and `FM_ENABLE_MODULE_MINTV2` and `FM_ENABLE_MODULE_WALLETV2` false. LNv2 stays at fedimintd's default (on). fedimintd reads these only when DKG writes a new config, so they change nothing for a federation that already runs. They are fedimintd 0.11's own defaults, set here because 0.12 and later default to iroh and the v2 modules.
 
 Without your own binds, P2P and the API listen on all interfaces (peers and clients need them), and the **setup UI listens on 127.0.0.1 only**. The API URL is `ws://` for a loopback host and `wss://` otherwise (behind TLS); set `FM_API_URL` for anything else.
 

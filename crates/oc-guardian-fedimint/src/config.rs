@@ -35,6 +35,24 @@ pub const DEFAULT_UI_PORT: u16 = 8175;
 /// The networks fedimintd accepts for `FM_BITCOIN_NETWORK`.
 pub const BITCOIN_NETWORKS: &[&str] = &["bitcoin", "testnet", "testnet4", "signet", "regtest"];
 
+/// What a federation set up through the kit runs: the TCP/TLS stack, and
+/// the v1 mint, wallet and Lightning modules beside LNv2 (left at
+/// fedimintd's default). fedimintd reads these only when DKG writes a new
+/// config, so the kit sets them on every start, whatever the version's own
+/// defaults are.
+pub const FEDERATION_DEFAULTS: &[(&str, &str)] = &[
+    ("FM_ENABLE_IROH", "false"),
+    ("FM_ENABLE_MODULE_LNV1", "true"),
+    ("FM_ENABLE_MODULE_MINT", "true"),
+    ("FM_ENABLE_MODULE_WALLET", "true"),
+    ("FM_ENABLE_MODULE_MINTV2", "false"),
+    ("FM_ENABLE_MODULE_WALLETV2", "false"),
+];
+
+/// Where fedimintd 0.11 keeps the guardian password once DKG is done. It
+/// reads it back on every start.
+pub const PASSWORD_FILE: &str = "password.private";
+
 /// fedimintd's Bitcoin data source. fedimintd MANDATES one (it refuses
 /// to start without `--bitcoind-url` or `--esplora-url`); the federation
 /// watches the chain through it. Esplora is the zero-infra default
@@ -93,6 +111,10 @@ pub struct FedimintdRuntime {
     /// fedimintd's API on loopback and answers the public API bind itself,
     /// passing on only calls that carry this password (see `gate`).
     pub setup_password: Option<SetupPassword>,
+    /// The guardian password, given to fedimintd as `FM_PASSWORD_API` and
+    /// `FM_PASSWORD_UI`: `OC_GUARDIAN_SETUP_PASSWORD`, else `FM_PASSWORD`
+    /// (the variable `ceremony` reads).
+    pub guardian_password: Option<SetupPassword>,
     /// `OC_GUARDIAN_NAME` (+ `OC_FEDERATION_NAME` and `OC_FEDERATION_SIZE`
     /// on the leader): local params the kit sets itself behind the setup
     /// gate, at boot and after every restart before DKG.
@@ -195,6 +217,17 @@ impl FedimintdRuntime {
             ));
         }
 
+        let setup_password = nonempty("OC_GUARDIAN_SETUP_PASSWORD");
+        let guardian_password = match (&setup_password, nonempty("FM_PASSWORD")) {
+            (Some(a), Some(b)) if *a != b => {
+                return Err(anyhow!(
+                    "OC_GUARDIAN_SETUP_PASSWORD and FM_PASSWORD are both set and differ · give the guardian password once"
+                ))
+            }
+            (Some(a), _) => Some(SetupPassword(a.clone())),
+            (None, b) => b.map(SetupPassword),
+        };
+
         let p2p_port = port("OC_P2P_PORT", DEFAULT_P2P_PORT)?;
         let api_port = port("OC_API_PORT", DEFAULT_API_PORT)?;
         let ui_port = port("OC_UI_PORT", DEFAULT_UI_PORT)?;
@@ -227,7 +260,8 @@ impl FedimintdRuntime {
             hosted_request_id: get("OC_HOSTED_REQUEST_ID").filter(|v| !v.is_empty()),
             attestation_post_url: get("OC_ATTESTATION_POST_URL").filter(|v| !v.is_empty()),
             attest_key: nonempty("OC_ATTEST_KEY_HEX").map(AttestKey),
-            setup_password: nonempty("OC_GUARDIAN_SETUP_PASSWORD").map(SetupPassword),
+            setup_password: setup_password.map(SetupPassword),
+            guardian_password,
             local_params: local_params(&nonempty)?,
         })
     }
@@ -287,7 +321,35 @@ impl FedimintdRuntime {
                 env.insert("FM_BITCOIND_PASSWORD".into(), password.clone());
             }
         }
+        for (k, v) in FEDERATION_DEFAULTS {
+            env.insert((*k).into(), (*v).into());
+        }
+        if let Some(pw) = &self.guardian_password {
+            env.insert("FM_PASSWORD_API".into(), pw.0.clone());
+            env.insert("FM_PASSWORD_UI".into(), pw.0.clone());
+        }
         env
+    }
+
+    /// A guardian that is set up keeps its password in `PASSWORD_FILE`. The
+    /// password given to the kit must be that one, or fedimintd's admin
+    /// API would answer to a different password than the guardian's.
+    pub fn check_password_file(&self) -> Result<()> {
+        let Some(pw) = &self.guardian_password else {
+            return Ok(());
+        };
+        let path = self.data_dir.join(PASSWORD_FILE);
+        match std::fs::read_to_string(&path) {
+            Ok(stored) if stored.trim() == pw.0 => Ok(()),
+            Ok(_) => Err(anyhow!(
+                "{} holds a different guardian password than OC_GUARDIAN_SETUP_PASSWORD or \
+                 FM_PASSWORD · the kit gives fedimintd that password as FM_PASSWORD_API, so set \
+                 it to the password this guardian was set up with",
+                path.display()
+            )),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
+        }
     }
 
     /// Where this machine reaches its own API: loopback when the API binds
@@ -481,6 +543,79 @@ mod tests {
         let r = rt(&m);
         assert_eq!(r.setup_password, Some(SetupPassword("s3cret-pw".into())));
         assert!(!format!("{r:?}").contains("s3cret-pw"));
+    }
+
+    #[test]
+    fn every_start_sets_tcp_and_the_v1_modules_and_leaves_lnv2_alone() {
+        let env = rt(&base()).fedimintd_env();
+        for (k, v) in [
+            ("FM_ENABLE_IROH", "false"),
+            ("FM_ENABLE_MODULE_LNV1", "true"),
+            ("FM_ENABLE_MODULE_MINT", "true"),
+            ("FM_ENABLE_MODULE_WALLET", "true"),
+            ("FM_ENABLE_MODULE_MINTV2", "false"),
+            ("FM_ENABLE_MODULE_WALLETV2", "false"),
+        ] {
+            assert_eq!(env.get(k).map(String::as_str), Some(v), "{k}");
+        }
+        assert!(!env.contains_key("FM_ENABLE_MODULE_LNV2"));
+        assert!(!env.contains_key("FM_PASSWORD_API"));
+        assert!(!env.contains_key("FM_PASSWORD_UI"));
+    }
+
+    #[test]
+    fn the_guardian_password_is_fedimintds_admin_password() {
+        for var in ["OC_GUARDIAN_SETUP_PASSWORD", "FM_PASSWORD"] {
+            let mut m = base();
+            m.insert(var.into(), "g-pw-1".into());
+            let r = rt(&m);
+            assert_eq!(r.guardian_password, Some(SetupPassword("g-pw-1".into())));
+            let env = r.fedimintd_env();
+            assert_eq!(env.get("FM_PASSWORD_API").unwrap(), "g-pw-1", "{var}");
+            assert_eq!(env.get("FM_PASSWORD_UI").unwrap(), "g-pw-1", "{var}");
+            assert!(!format!("{r:?}").contains("g-pw-1"));
+        }
+        let mut m = base();
+        m.insert("FM_PASSWORD".into(), "g-pw-1".into());
+        assert!(
+            rt(&m).setup_password.is_none(),
+            "FM_PASSWORD opens no setup gate"
+        );
+        m.insert("OC_GUARDIAN_SETUP_PASSWORD".into(), "g-pw-1".into());
+        assert_eq!(
+            rt(&m).fedimintd_env().get("FM_PASSWORD_API").unwrap(),
+            "g-pw-1"
+        );
+        m.insert("OC_GUARDIAN_SETUP_PASSWORD".into(), "g-pw-2".into());
+        let err = FedimintdRuntime::from_vars(|k| m.get(k).cloned())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("OC_GUARDIAN_SETUP_PASSWORD") && err.contains("FM_PASSWORD"),
+            "got: {err}"
+        );
+        assert!(!err.contains("g-pw-1") && !err.contains("g-pw-2"));
+    }
+
+    #[test]
+    fn a_set_up_guardian_starts_only_with_its_own_password() {
+        let dir = std::env::temp_dir().join(format!("oc-kit-pwfile-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut m = base();
+        m.insert("FM_DATA_DIR".into(), dir.display().to_string());
+        // No password given, or no file yet: nothing to compare.
+        std::fs::write(dir.join(PASSWORD_FILE), "g-pw-1\n").unwrap();
+        assert!(rt(&m).check_password_file().is_ok());
+        m.insert("OC_GUARDIAN_SETUP_PASSWORD".into(), "g-pw-1".into());
+        assert!(rt(&m).check_password_file().is_ok());
+        m.insert("OC_GUARDIAN_SETUP_PASSWORD".into(), "g-pw-2".into());
+        let err = rt(&m).check_password_file().unwrap_err().to_string();
+        assert!(err.contains(PASSWORD_FILE), "got: {err}");
+        assert!(!err.contains("g-pw-1") && !err.contains("g-pw-2"));
+        std::fs::remove_file(dir.join(PASSWORD_FILE)).unwrap();
+        assert!(rt(&m).check_password_file().is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

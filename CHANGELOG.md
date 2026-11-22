@@ -6,6 +6,29 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
+## Unreleased
+
+### Added
+
+- **`fedimintd run` gives fedimintd the guardian password as its admin
+  password.** It sets `FM_PASSWORD_API` and `FM_PASSWORD_UI` from
+  `OC_GUARDIAN_SETUP_PASSWORD`, else `FM_PASSWORD` (the variable `ceremony`
+  reads); setting both to different values is an error. fedimintd 0.12 and
+  later take the admin password from these; 0.11 ignores them.
+- **A set-up guardian starts only with its own password.** When
+  `<FM_DATA_DIR>/password.private` exists and the given password differs,
+  `fedimintd run` stops with a message naming the file.
+- **Every start sets the federation's stack and modules for DKG:**
+  `FM_ENABLE_IROH=false`, `FM_ENABLE_MODULE_LNV1`, `FM_ENABLE_MODULE_MINT` and
+  `FM_ENABLE_MODULE_WALLET` true, `FM_ENABLE_MODULE_MINTV2` and
+  `FM_ENABLE_MODULE_WALLETV2` false; LNv2 stays at fedimintd's default. These
+  are fedimintd 0.11's own defaults, and fedimintd reads them only when DKG
+  writes a new config. Checked on fedimintd 0.11.4: four guardians ran the
+  ceremony with them and formed a federation with ln, lnv2, meta, mint and
+  wallet.
+- `docs/fedimintd-upgrade.md`: what moves together when the pinned fedimintd
+  changes.
+
 ## 0.2.13 — 2026-11-11
 
 ### Added

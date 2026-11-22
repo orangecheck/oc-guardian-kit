@@ -93,6 +93,13 @@ pub fn run(bin_hint: String, allow_public_setup: bool) -> Result<()> {
     let rt = FedimintdRuntime::from_env().context("resolving fedimintd runtime from env")?;
     std::fs::create_dir_all(&rt.data_dir)
         .with_context(|| format!("creating data dir {}", rt.data_dir.display()))?;
+    rt.check_password_file()?;
+    if rt.guardian_password.is_none() {
+        warn!(
+            "no guardian password given (OC_GUARDIAN_SETUP_PASSWORD or FM_PASSWORD) · fedimintd \
+             0.12 and later serve no admin calls without FM_PASSWORD_API, which the kit sets from it"
+        );
+    }
     let bin = resolve_binary(&bin_hint);
     let version = probe_version(&bin);
     info!(
@@ -311,7 +318,26 @@ mod tests {
             envs.get("FM_P2P_URL").unwrap(),
             "fedimint://g.example.com:9000"
         );
+        assert_eq!(envs.get("FM_ENABLE_IROH").unwrap(), "false");
+        assert_eq!(envs.get("FM_ENABLE_MODULE_MINTV2").unwrap(), "false");
+        assert_eq!(envs.get("FM_ENABLE_MODULE_WALLET").unwrap(), "true");
         assert_eq!(cmd.get_program().to_string_lossy(), "fedimintd");
+    }
+
+    #[test]
+    fn the_spawn_carries_the_admin_password() {
+        let mut r = rt();
+        r.setup_password = Some(SetupPassword("g-pw".into()));
+        r.guardian_password = r.setup_password.clone();
+        let cmd = build_command(&r, &PathBuf::from("fedimintd"));
+        let get = |key: &str| {
+            cmd.get_envs()
+                .find(|(k, _)| *k == key)
+                .and_then(|(_, v)| v)
+                .map(|v| v.to_string_lossy().into_owned())
+        };
+        assert_eq!(get("FM_PASSWORD_API").as_deref(), Some("g-pw"));
+        assert_eq!(get("FM_PASSWORD_UI").as_deref(), Some("g-pw"));
     }
 
     #[test]
