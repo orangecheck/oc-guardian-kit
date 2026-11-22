@@ -146,6 +146,10 @@ pub struct CharterMeta {
     pub charter_version: String,
     pub charter_url: String,
     pub published_at: String,
+    /// The exact text whose SHA-256 is `charter_hash`. Absent on a charter
+    /// stored before the portal kept it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_text: Option<String>,
 }
 
 /// Existing charter signature as returned by /api/operator/charter.

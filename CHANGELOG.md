@@ -28,6 +28,18 @@ surface (CLI flags, action-envelope schemas, file paths under
   wallet.
 - `docs/fedimintd-upgrade.md`: what moves together when the pinned fedimintd
   changes.
+- **`charter sign` hashes the charter text before it signs.** It reads the
+  charter's exact text from the portal (`meta.canonical_text`), takes its
+  SHA-256, and signs only when that is the hash the portal names. It refuses a
+  charter that serves no text and a reply naming another federation's charter.
+  The envelope's operator id is the signing key's own.
+- **A charter signature the kit signs is uploaded on ochk.app.** `charter sign`
+  names the page: the federation's page, signed in to the account the key is
+  bound to, within the hour the envelope is valid. BYPASS.md §06, SECURITY.md
+  and the questionnaire say the same.
+- `test-fixtures/operator-signature-vectors.json` holds a charter signature,
+  and the kit's signer is held to it byte for byte, as oc-me-web's charter
+  route is.
 
 ## 0.2.13 — 2026-11-11
 

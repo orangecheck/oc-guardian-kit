@@ -1,5 +1,5 @@
 {
-    "about": "Signed by oc-me-web's signSeatClaim and signAmendmentVote with the private key 07 repeated 32 times. oc-guardian-kit signs the same bytes; each repo's tests hold its own signers to this file.",
+    "about": "Signed by oc-me-web's signSeatClaim and signAmendmentVote with the private key 07 repeated 32 times; a charter signature is the charter-sign envelope the portal's charter route takes, over the SHA-256 of the charter text it serves. oc-guardian-kit signs the same bytes; each repo's tests hold its own signers to this file.",
     "private_key": "0707070707070707070707070707070707070707070707070707070707070707",
     "operator_pubkey": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
     "seat_claims": [
@@ -57,6 +57,35 @@
                     }
                 }
             ]
+        }
+    ],
+    "charter_signatures": [
+        {
+            "charter": {
+                "federation_slug": "oc-mutiny-v1",
+                "charter_version": "v1.3.0",
+                "canonical_text": "# oc-mutiny-v1 charter\ncharter_version: v1.3.0\nfederation_slug: oc-mutiny-v1\nthreshold: 3-of-4\nguardian: ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c\nguardian_handle: Ōkami — night shift\nguardian_contact: ₿ on nostr\n"
+            },
+            "digest": "9b1922b2985b087706b03c0666b01d5f18c0f10ce8c6c8455fe7356f5e93c8c5",
+            "now": 1795000000,
+            "bytes": "{\"action\":\"charter-sign\",\"params\":{\"charter_hash\":\"9b1922b2985b087706b03c0666b01d5f18c0f10ce8c6c8455fe7356f5e93c8c5\",\"charter_version\":\"v1.3.0\",\"federation_slug\":\"oc-mutiny-v1\",\"operator_id\":\"op-fe812c12f3ab4ce6ac5db69ac352f906\",\"signed_at\":\"2026-11-18T11:06:40.000Z\"},\"nonce\":1795000000,\"expires_at\":1795003600,\"federation\":\"oc-mutiny-v1\"}",
+            "envelope": {
+                "payload": {
+                    "action": "charter-sign",
+                    "params": {
+                        "charter_hash": "9b1922b2985b087706b03c0666b01d5f18c0f10ce8c6c8455fe7356f5e93c8c5",
+                        "charter_version": "v1.3.0",
+                        "federation_slug": "oc-mutiny-v1",
+                        "operator_id": "op-fe812c12f3ab4ce6ac5db69ac352f906",
+                        "signed_at": "2026-11-18T11:06:40.000Z"
+                    },
+                    "nonce": 1795000000,
+                    "expires_at": 1795003600,
+                    "federation": "oc-mutiny-v1"
+                },
+                "pubkey": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+                "sig_hex": "e6fc16fbc03550812795622e77915257743a4a61b10e47f79804161a6b4284e7b0d96ba66e7f4b52964fc4185d3091b3682fbfcdf67eeeb9decc4aae0a013501"
+            }
         }
     ]
 }

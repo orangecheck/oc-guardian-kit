@@ -1,6 +1,6 @@
 # BYPASS.md — the kit-only path for each portal step
 
-**Audience:** operators who want to sign with the kit rather than with a key in the browser at the [`ochk.app/me/operator`](https://ochk.app/me/operator) portal. This document is a first-class artifact maintained at parity with the portal — a portal feature is **not done** until its bypass is documented and verified working. One is not done: a charter signature the kit signs has no upload yet ([§06](#06--sign-the-federation-charter)).
+**Audience:** operators who want to sign with the kit rather than with a key in the browser at the [`ochk.app/me/operator`](https://ochk.app/me/operator) portal. This document is a first-class artifact maintained at parity with the portal — a portal feature is **not done** until its bypass is documented and verified working.
 
 **Architectural commitment:** A guardian operating purely via the kit is **architecturally indistinguishable** at the federation layer from a guardian operating with the portal. Both produce the same envelopes, sign with the same operator key, and are accepted by federations and consumers identically.
 
@@ -8,7 +8,7 @@
 
 ## Table of equivalents
 
-Every row here is a portal route the operator might land on, paired with the kit-only path that does the same thing. Both paths are supported. The kit signs without the portal; most of what it signs is then uploaded, signed in, on an ochk.app page ([Submitting what the kit signs](#submitting-what-the-kit-signs)), so that step needs ochk.app online. A charter signature has no upload yet ([§06](#06--sign-the-federation-charter)).
+Every row here is a portal route the operator might land on, paired with the kit-only path that does the same thing. Both paths are supported. The kit signs without the portal; most of what it signs is then uploaded, signed in, on an ochk.app page ([Submitting what the kit signs](#submitting-what-the-kit-signs)), so that step needs ochk.app online.
 
 | # | Lifecycle stage | Portal path | Kit-only equivalent |
 |---|---|---|---|
@@ -17,7 +17,7 @@ Every row here is a portal route the operator might land on, paired with the kit
 | 03 | Discover federations seeking guardians | Portal lists federations with seats open | `oc-guardian federations list` (the same directory, read directly) — see [§03](#03--discover-federations-seeking-guardians) |
 | 04 | Join a federation | Portal mediates the seat and the charter | The seat the creator holds for you, your claim on it (`oc-guardian seat claim`, [§17](#17--take-a-seat-reserved-for-you)), and your charter ratification — see [§04](#04--join-a-federation) |
 | 05 | Run the DKG ceremony | Portal drives the setup API of the seats it hosts | `oc-guardian ceremony {start, add-peer, dkg, status, finalize}` on your own guardian — see [§05](#05--run-the-dkg-ceremony) |
-| 06 | Sign the federation charter | Portal renders the charter and asks your key to sign | `oc-guardian charter {fetch, sign}`; the signature has no upload yet — see [§06](#06--sign-the-federation-charter) |
+| 06 | Sign the federation charter | Portal renders the charter and asks your key to sign | `oc-guardian charter {fetch, sign}`, then upload `charter-sig.json` — see [§06](#06--sign-the-federation-charter) |
 | 07 | Run the guardian | Portal shows install + run instructions | `oc-guardian fedimintd run` — see [§07](#07--run-the-guardian) |
 | 08 | Operational status | Portal dashboard | `oc-guardian status`, `oc-guardian fedimintd status`, `oc-guardian verify-status` — see [§08](#08--operational-status) |
 | 09 | Receive incident alerts | Portal alerts feed | The portal's published incidents; the kit has no feed yet — see [§09](#09--receive-incident-alerts) |
@@ -158,7 +158,9 @@ oc-guardian charter fetch <federation-slug>
 oc-guardian charter sign <federation-slug> --out charter-sig.json
 ```
 
-ochk.app has no upload for `charter-sig.json` yet. `oc-guardian charter publish` sends it to `/api/operator/charter` without the signed-in ochk.app session that route asks for, so it is refused. Until an upload exists, only a key held in the portal can ratify a charter: a key from `init --key-file` can be imported there (`ochk.app/me/operator`, "Private key"); the kit has no command that exports a key from the OS keychain.
+`sign` reads the charter's exact text from the portal and hashes it itself. It signs only when that SHA-256 is the hash the portal names, and refuses a charter that serves no text (one stored before the portal kept it). The envelope names the hash, the version, the key's operator id, the time and a nonce, and expires an hour after it is signed.
+
+Upload `charter-sig.json` within that hour at `ochk.app/me/operator/federations/<slug>` ("Signed with the guardian kit? Upload the file"), signed in to the account your key is bound to (§02). The server checks the signature, that your key holds a seat, and that the hash is the charter it publishes now. `oc-guardian charter publish` sends the file without that session, so the portal refuses it.
 
 The charter signature is an Ed25519 signature over the canonical charter; it is the same bytes however it travels.
 
@@ -399,5 +401,6 @@ Each of these commands signs locally and writes a file. Upload it signed in, on 
 | `oc-guardian federation handover accept` | `creator-handover-accept.json` | `ochk.app/me/operator/handovers` |
 | `oc-guardian seat claim` | `seat-claim.json` | `ochk.app/me/operator/federations/<slug>` |
 | `oc-guardian amendment vote` | `amendment-vote.json` | `ochk.app/me/operator/federations/<slug>/amendments` |
+| `oc-guardian charter sign` | `charter-sig.json` | `ochk.app/me/operator/federations/<slug>` |
 
-A payouts claim, an exit, an attest delegation and an amendment vote are accepted only from the account your key is bound to (§02); a seat claim only from the account the seat is held for, with your key bound to it.
+A payouts claim, an exit, an attest delegation, an amendment vote and a charter signature are accepted only from the account your key is bound to (§02); a seat claim only from the account the seat is held for, with your key bound to it.

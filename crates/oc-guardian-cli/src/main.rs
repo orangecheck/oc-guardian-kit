@@ -285,11 +285,11 @@ enum CharterCommand {
     /// would commit to.
     Fetch { slug: String },
     /// Produce a charter ratification envelope signed with the operator key.
-    /// Fetches the canonical charter meta from the portal, signs it
-    /// with your operator key, writes the envelope JSON to disk.
-    /// Idempotent · re-running produces a fresh envelope with a new
-    /// nonce. ochk.app has no upload for it yet, so only a key held
-    /// in the portal can ratify a charter today.
+    /// Fetches the charter from the portal and hashes its text, signs only
+    /// when that is the hash the portal names, and writes the envelope JSON
+    /// to disk. Upload it within the hour on the federation's page at
+    /// ochk.app, signed in to the account the key is bound to. Re-running
+    /// produces a fresh envelope with a new nonce.
     Sign {
         /// Federation slug to ratify (e.g. `oc-me-v1`).
         slug: String,

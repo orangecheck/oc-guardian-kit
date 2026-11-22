@@ -8,11 +8,11 @@
 //! into the federation.
 //!
 //! Canonical form: the federation's `/api/operator/charter` endpoint
-//! returns the canonical hash + version + URL. The kit fetches that,
-//! produces an `ActionEnvelope` (action: charter-sign) signed with the
-//! operator key, and writes it to disk for review. ochk.app has no
-//! upload for it yet, and `publish` carries no signed-in session, which
-//! the portal's charter route asks for.
+//! returns the charter's hash, version, URL and exact text. The kit hashes
+//! that text itself, signs an `ActionEnvelope` (action: charter-sign)
+//! with the operator key only when it matches the hash the portal names,
+//! and writes it to disk. The operator uploads it on the federation's page
+//! at ochk.app, signed in to the account the key is bound to.
 //!
 //! This crate implements the kit-side of BYPASS.md §06 (charter
 //! fetch / sign / publish).
@@ -29,9 +29,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context, Result};
 use oc_guardian_core::actions::{ActionEnvelope, ActionPayload, ActionType};
+use oc_guardian_core::commands::printable;
 use oc_guardian_core::config::{read_id, resolve_dir};
+use oc_guardian_core::identity::Signer;
 use oc_guardian_core::keychain;
 use oc_guardian_core::portal_client::{CharterFetchResponse, CharterMeta, PortalClient};
+use sha2::{Digest, Sha256};
 use tracing::{info, warn};
 
 /// Replay-protection horizon for charter-sign envelopes. The portal
@@ -84,8 +87,9 @@ fn fetch_summary(slug: &str, resp: &CharterFetchResponse) -> String {
 }
 
 /// The charter `sign` may commit to, or why there is none: the portal
-/// publishes no charter for the federation (`meta: null`), or an older portal
-/// sent its "v0-pending" stand-in, which carries oc-me-v1's hash.
+/// publishes no charter for the federation (`meta: null`), an older portal
+/// sent its "v0-pending" stand-in, which carries oc-me-v1's hash, or the text
+/// it serves is not the text the hash names.
 fn charter_to_sign(slug: &str, meta: Option<CharterMeta>) -> Result<CharterMeta> {
     let meta = meta.ok_or_else(|| {
         anyhow!(
@@ -102,7 +106,68 @@ fn charter_to_sign(slug: &str, meta: Option<CharterMeta>) -> Result<CharterMeta>
             meta.charter_version
         ));
     }
+    if meta.federation_slug != slug {
+        return Err(anyhow!(
+            "the portal answered for `{slug}` with the charter of `{}`",
+            printable(&meta.federation_slug)
+        ));
+    }
+    let text = meta.canonical_text.as_deref().ok_or_else(|| {
+        anyhow!(
+            "the portal serves no text for `{slug}`'s charter {}, so its hash cannot be \
+             checked here. A charter stored before the portal kept its text serves none; \
+             it gets one when a seat change republishes it",
+            printable(&meta.charter_version)
+        )
+    })?;
+    let digest = hex::encode(Sha256::digest(text.as_bytes()));
+    if digest != meta.charter_hash.to_ascii_lowercase() {
+        return Err(anyhow!(
+            "the charter text the portal serves for `{slug}` hashes to {digest}, not the {} \
+             it names",
+            printable(&meta.charter_hash)
+        ));
+    }
     Ok(meta)
+}
+
+/// The charter-sign envelope the portal's charter route takes: the hash and
+/// version of `meta`, the operator id of the key that signs, dated `now` and
+/// valid for an hour.
+fn charter_envelope(signer: &dyn Signer, meta: &CharterMeta, now: u64) -> Result<ActionEnvelope> {
+    let signed_at = format!(
+        "{}.000Z",
+        iso8601_from_unix(now as i64).context("format signed_at timestamp")?
+    );
+    let payload = ActionPayload {
+        action: ActionType::CharterSign,
+        params: serde_json::json!({
+            "federation_slug": meta.federation_slug,
+            "operator_id": signer.pubkey().to_id().0,
+            "charter_hash": meta.charter_hash,
+            "charter_version": meta.charter_version,
+            "signed_at": signed_at,
+        }),
+        nonce: now,
+        expires_at: (now as i64) + ENVELOPE_TTL_SECS,
+        federation: Some(meta.federation_slug.clone()),
+    };
+    let canonical = serde_json::to_vec(&payload).context("canonicalize payload")?;
+    let sig: [u8; 64] = signer.sign(&canonical).context("sign canonical bytes")?;
+    // A key store that signs with another key than the one it names is caught here, not at
+    // the portal.
+    if !keychain::verify(&signer.pubkey(), &canonical, &sig) {
+        return Err(anyhow!(
+            "the signature does not verify under this operator's key {}. Re-run \
+             `oc-guardian init` if this persists",
+            hex::encode(signer.pubkey().0)
+        ));
+    }
+    Ok(ActionEnvelope {
+        payload,
+        pubkey: signer.pubkey(),
+        sig_hex: hex::encode(sig),
+    })
 }
 
 /// `oc-guardian charter sign <slug> --out <path>` · fetch the
@@ -149,53 +214,15 @@ pub fn sign(slug: String, out: String, hsm: String) -> Result<()> {
                 id.0
             )
         })?;
-    let pubkey = signer.pubkey();
 
-    // 4. Build the inner payload + outer envelope.
+    // 4. Sign, and check the signature under the key before writing it.
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .context("system clock before UNIX epoch")?
         .as_secs();
-    let signed_at = format!(
-        "{}.000Z",
-        iso8601_from_unix(now as i64).context("format signed_at timestamp")?
-    );
-    let payload = ActionPayload {
-        action: ActionType::CharterSign,
-        params: serde_json::json!({
-            "federation_slug": slug,
-            "operator_id": id.0,
-            "charter_hash": meta.charter_hash,
-            "charter_version": meta.charter_version,
-            "signed_at": signed_at,
-        }),
-        nonce: now,
-        expires_at: (now as i64) + ENVELOPE_TTL_SECS,
-        federation: Some(slug.clone()),
-    };
+    let envelope = charter_envelope(signer.as_ref(), &meta, now)?;
 
-    let canonical = serde_json::to_vec(&payload).context("canonicalize payload")?;
-    let sig_bytes = signer.sign(&canonical).context("sign canonical bytes")?;
-    let envelope = ActionEnvelope {
-        payload,
-        pubkey,
-        sig_hex: hex::encode(sig_bytes),
-    };
-
-    // 5. Self-verify before writing. Catches keychain corruption /
-    //    local crypto regressions before the portal sees a bad sig.
-    let canonical_check = serde_json::to_vec(&envelope.payload).context("re-canonicalize")?;
-    debug_assert_eq!(canonical, canonical_check, "canonicalization not stable");
-    if !keychain::verify(&envelope.pubkey, &canonical, &sig_bytes) {
-        return Err(anyhow!(
-            "self-verify failed · the signature this kit just produced does NOT verify \
-             against the local pubkey. Likely a keychain drift or a hex encoding bug. \
-             Re-run `oc-guardian init` if this persists."
-        ));
-    }
-
-    // 6. Write to disk. Use pretty-printed JSON · this file may be
-    //    eyeballed by operators reviewing before publish.
+    // 5. Write to disk. Pretty-printed: the operator may read it before uploading.
     let out_path = Path::new(&out);
     if let Some(parent) = out_path.parent() {
         if !parent.as_os_str().is_empty() {
@@ -207,16 +234,21 @@ pub fn sign(slug: String, out: String, hsm: String) -> Result<()> {
 
     println!("charter ratification envelope written to {out}");
     println!("federation : {slug}");
-    println!("hash       : {}", envelope.payload.params["charter_hash"]);
     println!(
-        "version    : {}",
-        envelope.payload.params["charter_version"]
+        "hash       : {} (the text served hashes to it)",
+        meta.charter_hash
     );
-    println!("operator   : {}", id.0);
+    println!("version    : {}", meta.charter_version);
+    println!(
+        "operator   : {}",
+        envelope.payload.params["operator_id"]
+            .as_str()
+            .unwrap_or_default()
+    );
     println!("expires_at : {}", envelope.payload.expires_at);
     println!();
-    println!("ochk.app has no upload for a charter signature yet, so only a key held");
-    println!("in the portal can ratify a charter today.");
+    println!("upload it at ochk.app/me/operator/federations/{slug}, signed in to the account");
+    println!("this key is bound to (oc-guardian bind), within the hour.");
     Ok(())
 }
 
@@ -337,8 +369,22 @@ mod tests {
             charter_version: "v1.1.0".into(),
             charter_url: "https://ochk.io/docs/federation/oc-me-v1".into(),
             published_at: "2026-10-31T00:00:00.000Z".into(),
+            canonical_text: None,
         }
     }
+
+    /// A charter as the portal serves it, with the text its hash names.
+    fn served(slug: &str, text: &str) -> CharterMeta {
+        use sha2::{Digest, Sha256};
+        CharterMeta {
+            federation_slug: slug.into(),
+            charter_hash: hex::encode(Sha256::digest(text.as_bytes())),
+            canonical_text: Some(text.into()),
+            ..oc_me_v1()
+        }
+    }
+
+    const TEXT: &str = "# Kit fixture charter\nversion: v1.3.0\nthreshold: 3-of-4\n";
 
     // One signature over a superseded version: recorded, not a ratification.
     fn old_signature() -> oc_guardian_core::portal_client::CharterSignature {
@@ -409,13 +455,100 @@ mod tests {
     }
 
     #[test]
-    fn sign_takes_a_published_charter() {
+    fn sign_takes_a_charter_whose_text_hashes_to_its_hash() {
+        let meta = served("oc-me-v1", TEXT);
+        let hash = meta.charter_hash.clone();
         assert_eq!(
-            charter_to_sign("oc-me-v1", Some(oc_me_v1()))
+            charter_to_sign("oc-me-v1", Some(meta))
                 .unwrap()
                 .charter_hash,
-            "5fcb"
+            hash
         );
+    }
+
+    #[test]
+    fn sign_refuses_a_charter_whose_text_does_not_hash_to_its_hash() {
+        let meta = CharterMeta {
+            charter_hash: served("oc-me-v1", "another text").charter_hash,
+            ..served("oc-me-v1", TEXT)
+        };
+        let err = charter_to_sign("oc-me-v1", Some(meta)).unwrap_err();
+        assert!(err.to_string().contains("hashes to"), "{err}");
+    }
+
+    #[test]
+    fn sign_refuses_a_charter_that_serves_no_text() {
+        let meta = CharterMeta {
+            canonical_text: None,
+            ..served("oc-me-v1", TEXT)
+        };
+        let err = charter_to_sign("oc-me-v1", Some(meta)).unwrap_err();
+        assert!(err.to_string().contains("serves no text"), "{err}");
+    }
+
+    #[test]
+    fn sign_refuses_another_federations_charter() {
+        let err = charter_to_sign("oc-me-v1", Some(served("oc-other-v1", TEXT))).unwrap_err();
+        assert!(err.to_string().contains("`oc-other-v1`"), "{err}");
+    }
+
+    /// The vectors oc-me-web's tests hold its charter route to, byte for byte.
+    fn vectors() -> serde_json::Value {
+        serde_json::from_str(include_str!(
+            "../../oc-guardian-core/test-fixtures/operator-signature-vectors.json"
+        ))
+        .unwrap()
+    }
+
+    fn text(v: &serde_json::Value) -> &str {
+        v.as_str().unwrap()
+    }
+
+    #[test]
+    fn charter_signatures_match_what_the_portal_takes() {
+        let v = vectors();
+        let signer = StaticSigner::from_hex(text(&v["private_key"])).unwrap();
+        let cases = v["charter_signatures"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let c = &case["charter"];
+            let meta = CharterMeta {
+                federation_slug: text(&c["federation_slug"]).into(),
+                charter_version: text(&c["charter_version"]).into(),
+                charter_hash: text(&case["digest"]).into(),
+                canonical_text: Some(text(&c["canonical_text"]).into()),
+                ..oc_me_v1()
+            };
+            let meta = charter_to_sign(text(&c["federation_slug"]), Some(meta)).unwrap();
+            let env = charter_envelope(&signer, &meta, case["now"].as_u64().unwrap()).unwrap();
+            let bytes = serde_json::to_vec(&env.payload).unwrap();
+            assert_eq!(String::from_utf8(bytes).unwrap(), text(&case["bytes"]));
+            assert_eq!(serde_json::to_value(&env).unwrap(), case["envelope"]);
+        }
+    }
+
+    /// A key store that names one key and signs with another.
+    struct WrongKey(StaticSigner, StaticSigner);
+
+    impl Signer for WrongKey {
+        fn pubkey(&self) -> oc_guardian_core::identity::OperatorPubKey {
+            self.0.pubkey()
+        }
+        fn sign(&self, message: &[u8]) -> Result<[u8; 64]> {
+            self.1.sign(message)
+        }
+    }
+
+    use oc_guardian_core::keychain::StaticSigner;
+
+    #[test]
+    fn sign_refuses_a_signature_its_key_does_not_verify() {
+        let named = StaticSigner::from_hex(&"07".repeat(32)).unwrap();
+        let other = StaticSigner::from_hex(&"08".repeat(32)).unwrap();
+        let meta = served("oc-me-v1", TEXT);
+        assert!(charter_envelope(&named, &meta, 1_795_000_000).is_ok());
+        let err = charter_envelope(&WrongKey(named, other), &meta, 1_795_000_000).unwrap_err();
+        assert!(err.to_string().contains("does not verify"), "{err}");
     }
 
     #[test]

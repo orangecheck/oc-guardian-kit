@@ -514,8 +514,7 @@ pub fn federations_join(slug: String, _transport: String) -> Result<()> {
     println!("       and upload seat-claim.json at ochk.app/me/operator/federations/{slug}");
     println!("    3. ratify the charter — that IS your join. The kit signs it:");
     println!("         oc-guardian charter sign {slug}");
-    println!("       but ochk.app has no upload for the signature yet, so only a key");
-    println!("       held in the portal can ratify a charter today");
+    println!("       and upload charter-sig.json at ochk.app/me/operator/federations/{slug}");
     println!("    4. run DKG with your peers:  oc-guardian ceremony start --name <name> …");
     println!();
     Ok(())
@@ -1485,7 +1484,7 @@ fn vote_target<'a>(
 }
 
 /// Served text, printed so a control character in it cannot rewrite the terminal.
-fn printable(s: &str) -> String {
+pub fn printable(s: &str) -> String {
     s.chars()
         .map(|c| {
             let hidden = c.is_control()

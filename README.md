@@ -1,6 +1,6 @@
 # oc-guardian-kit
 
-**The operator's own tooling for running a Fedimint guardian in an orangecheck federation.** Self-serve. Composes with `fedimintd` rather than replacing it. Optional companion to the [`ochk.app/me/operator`](https://ochk.app/me/operator) portal: the kit signs everything the portal signs, without a key in the browser. A charter signature it signs has no upload yet ("What is not built yet").
+**The operator's own tooling for running a Fedimint guardian in an orangecheck federation.** Self-serve. Composes with `fedimintd` rather than replacing it. Optional companion to the [`ochk.app/me/operator`](https://ochk.app/me/operator) portal: the kit signs everything the portal signs, without a key in the browser.
 
 > **Where things stand.** While the system is in testing, orangecheck holds every role, guardian seats included: it runs every test seat, on its own hardware, with its own keys ([ochk.app/custody](https://ochk.app/custody) shows the live picture). The kit is how independent operators take those seats over. orangecheck as the lasting operator is never the design.
 >
@@ -61,8 +61,8 @@ oc-guardian apply prepare --out application.json --questionnaire ./answers.md
 # 3. Once accepted, claim the seat the federation's creator holds for you, and
 #    upload the seat-claim.json it writes on the federation's page in ochk.app.
 oc-guardian seat claim <federation-slug> <seat> --block-height <h> --block-hash <hash>
-#    Review and sign the federation's charter. ochk.app has no upload for the
-#    signature yet ("What is not built yet").
+#    Review and sign the federation's charter, then upload the charter-sig.json
+#    it writes on the federation's page in ochk.app, within the hour.
 oc-guardian charter fetch <federation-slug>
 oc-guardian charter sign <federation-slug> --out charter-sig.json
 
@@ -163,7 +163,7 @@ Every lifecycle stage of the program (application → exit) has a kit command. S
 | Federations | `oc-guardian federations list` (`join` and `leave` print the steps), `oc-guardian federation handover {offer, accept}` (a creator hands a federation to another operator) |
 | Seats | `oc-guardian seat claim <slug> <seat>` (take a seat reserved for you, before the ceremony) |
 | Ceremony | `oc-guardian ceremony {start, add-peer, dkg, status, finalize}` |
-| Charter | `oc-guardian charter {fetch, sign}` (the signature has no upload yet) |
+| Charter | `oc-guardian charter {fetch, sign}` |
 | Amendments | `oc-guardian amendment vote <slug> <amendment-id> {ratify, reject}` |
 | Run | `oc-guardian fedimintd {install, run, status}` |
 | Local state | `oc-guardian status` |
@@ -175,7 +175,7 @@ Every lifecycle stage of the program (application → exit) has a kit command. S
 
 ## What needs the portal
 
-Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify-status`, `federations list`, `charter {fetch, sign, publish}` and `amendment vote`, which reads the amendment it signs; `fedimintd run` posts its liveness reports to `OC_ATTESTATION_POST_URL` when that is set. `bind`, `alerts post`, `payouts claim`, `exit-handoff`, `exit-ratify`, `attest-delegate`, `federation handover {offer, accept}`, `seat claim` and `amendment vote` sign locally and write a file you upload, signed in, on the ochk.app page the kit names (BYPASS.md, "Submitting what the kit signs"). `charter sign` writes `charter-sig.json`, which has no upload yet ("What is not built yet"). `bind`, `exit-ratify`, `attest-delegate`, `seat claim` and `amendment vote` need a recent bitcoin mainnet block (height and hash, within 6 of the tip). Everything else is local.
+Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify-status`, `federations list`, `charter {fetch, sign, publish}` and `amendment vote`, which reads the amendment it signs; `fedimintd run` posts its liveness reports to `OC_ATTESTATION_POST_URL` when that is set. `bind`, `alerts post`, `payouts claim`, `exit-handoff`, `exit-ratify`, `attest-delegate`, `federation handover {offer, accept}`, `seat claim` and `amendment vote` sign locally and write a file you upload, signed in, on the ochk.app page the kit names (BYPASS.md, "Submitting what the kit signs"). `charter sign` reads the charter, then writes `charter-sig.json` for you to upload the same way. `bind`, `exit-ratify`, `attest-delegate`, `seat claim` and `amendment vote` need a recent bitcoin mainnet block (height and hash, within 6 of the tip). Everything else is local.
 
 ## Two fedimint behaviours to know
 
@@ -184,7 +184,6 @@ Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify
 
 ## What is not built yet
 
-- **Submitting a charter signature.** `charter sign` writes `charter-sig.json`, and ochk.app has no upload for it yet. `charter publish` sends it to `/api/operator/charter` without the signed-in ochk.app session that route asks for, so it is refused. Until an upload exists, only a key held in the portal can ratify a charter: a key from `init --key-file` can be imported there; the kit has no command that exports a key from the OS keychain.
 - **Hardware tokens.** `--hsm yubikey | ledger | passkey` is accepted and does nothing different: the key goes in the OS keychain (or the `--key-file` you gave). A hardware token that never releases the key is planned, not shipped.
 - **The portal bridge.** `oc-guardian bridge {enable, allow, disable, status}` only logs that it is a stub. Nothing subscribes to portal requests, and no allowlist is kept.
 - **Transports other than HTTPS.** `charter publish --transport` takes `https` only. `register` and `federations join` accept `--transport` and ignore it.
