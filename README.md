@@ -54,8 +54,12 @@ oc-guardian init --key-file /var/lib/oc-guardian/operator.key
 #    filled in, and takes the bind-claim.json it writes.
 oc-guardian bind --did <your did:oc> --block-height <h> --block-hash <hash>
 
-# 2. Apply. Email apply@ochk.io the signed envelope this writes, with answers.md
-#    attached too: the envelope carries only its hash.
+# 2. Apply at ochk.app/me/operator/apply, signed in to that account. The
+#    program is closed while the test federation is tested, and the page opens
+#    only to invited accounts: ochk.app/guardians says what it takes and how to
+#    be told when it opens. The key that signs is the one in your browser:
+#    import the file `init --key-file` wrote there. Without a browser, see
+#    BYPASS.md §01, which starts from this:
 oc-guardian apply prepare --out application.json --questionnaire ./answers.md
 
 # 3. Once accepted, claim the seat the federation's creator holds for you, and
@@ -199,6 +203,8 @@ That key signs liveness and nothing else: not the charter, a payout claim, an ex
 
 ## Documentation
 
+- [Run a guardian](https://ochk.app/guardians) — whether the program is open, what an operator does, and the time and cost.
+- [The test stack](https://ochk.io/docs/me/operator/test-stack) — the URLs and settings an invited operator runs the kit with.
 - [`BYPASS.md`](./BYPASS.md) — the kit-only path for each portal step.
 - [`SECURITY.md`](./SECURITY.md) — threat model, key handling, what orangecheck sees and doesn't.
 - [`CHARTER-FORMAT.md`](./CHARTER-FORMAT.md) — charter document spec: the plain-text form the portal publishes, and the RFC 8785 form (not built).

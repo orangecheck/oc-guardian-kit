@@ -60,3 +60,6 @@ changes, and what to check on the way. The next move is to the 0.13 line.
 
 The me.ochk.io portal pins the same fedimintd for its executor's client, the
 hosted guardian image and the shared gateway. Its own checklist moves with it.
+
+The operator docs' test-stack page names the pinned version and its install
+command (oc-docs `src/pages/me/operator/test-stack.mdx`, "What the kit pins").
