@@ -175,7 +175,7 @@ Every lifecycle stage of the program (application → exit) has a kit command. S
 
 ## What needs the portal
 
-Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify-status`, `federations list`, `charter {fetch, sign, publish}` and `amendment vote`, which reads the amendment it signs; `fedimintd run` posts its liveness reports to `OC_ATTESTATION_POST_URL` when that is set. `bind`, `alerts post`, `payouts claim`, `exit-handoff`, `exit-ratify`, `attest-delegate`, `federation handover {offer, accept}`, `seat claim` and `amendment vote` sign locally and write a file you upload, signed in, on the ochk.app page the kit names (BYPASS.md, "Submitting what the kit signs"). `charter sign` reads the charter, then writes `charter-sig.json` for you to upload the same way. `bind`, `exit-ratify`, `attest-delegate`, `seat claim` and `amendment vote` need a recent bitcoin mainnet block (height and hash, within 6 of the tip). Everything else is local.
+Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify-status`, `federations list`, `charter {fetch, sign}` and `amendment vote`, which reads the amendment it signs; `fedimintd run` posts its liveness reports to `OC_ATTESTATION_POST_URL` when that is set. `bind`, `alerts post`, `payouts claim`, `exit-handoff`, `exit-ratify`, `attest-delegate`, `federation handover {offer, accept}`, `seat claim` and `amendment vote` sign locally and write a file you upload, signed in, on the ochk.app page the kit names (BYPASS.md, "Submitting what the kit signs"). `charter sign` reads the charter, then writes `charter-sig.json` for you to upload the same way. `bind`, `exit-ratify`, `attest-delegate`, `seat claim` and `amendment vote` need a recent bitcoin mainnet block (height and hash, within 6 of the tip). Everything else is local.
 
 ## Two fedimint behaviours to know
 
@@ -186,7 +186,7 @@ Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify
 
 - **Hardware tokens.** `--hsm yubikey | ledger | passkey` is accepted and does nothing different: the key goes in the OS keychain (or the `--key-file` you gave). A hardware token that never releases the key is planned, not shipped.
 - **The portal bridge.** `oc-guardian bridge {enable, allow, disable, status}` only logs that it is a stub. Nothing subscribes to portal requests, and no allowlist is kept.
-- **Transports other than HTTPS.** `charter publish --transport` takes `https` only. `register` and `federations join` accept `--transport` and ignore it.
+- **Transports other than HTTPS.** `register` and `federations join` accept `--transport` and ignore it.
 - **`alerts subscribe`, `payouts list`, `audit log --since`.** They point at the portal or list local files; there is no feed, ledger query or time filter.
 
 ## Hosted guardians

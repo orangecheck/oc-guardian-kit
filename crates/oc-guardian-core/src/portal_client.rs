@@ -1,29 +1,26 @@
 //! HTTP client for the OC me.ochk.io portal API.
 //!
-//! The kit reaches the portal for three reasons:
+//! The kit reaches the portal for two reasons:
 //!
 //!   1. Read-only fetches against public endpoints (charter meta,
 //!      federation directory, per-federation deep view, operator
 //!      marketplace). These are CORS-open at the portal layer and
 //!      need no authentication.
-//!   2. Posting a charter signature (`charter publish`). The portal
-//!      verifies the operator key's signature, and also asks for a
-//!      signed-in ochk.app session, which this client does not carry,
-//!      so it refuses the post today. The other envelopes the kit signs
-//!      are uploaded on ochk.app (BYPASS.md).
-//!   3. Verifying acceptance envelopes the portal issues back to the
+//!   2. Verifying acceptance envelopes the portal issues back to the
 //!      operator (via `oc-guardian apply verify-acceptance`).
+//!
+//! It posts nothing: what the kit signs is uploaded, signed in, on
+//! ochk.app (BYPASS.md, "Submitting what the kit signs"). The one post
+//! the kit makes to me.ochk.io is `fedimintd run`'s liveness report.
 //!
 //! Sync by design · the kit is a CLI; no tokio runtime needed.
 //! `ureq` with rustls-only TLS keeps the binary reproducible (no
 //! per-host openssl linkage variance).
 
 use anyhow::{anyhow, Context, Result};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::de::DeserializeOwned;
 use std::time::Duration;
 use tracing::debug;
-
-use crate::actions::ActionEnvelope;
 
 /// Default portal base. Operators can override via the
 /// `OC_PORTAL_BASE` env var or the per-command `--portal` flag for
@@ -95,39 +92,6 @@ impl PortalClient {
             }
             Err(e) => Err(anyhow!("portal transport error · {url}: {e}")),
         }
-    }
-
-    /// POST a JSON body and deserialize the response body. Used by
-    /// `charter publish`.
-    pub fn post_json<T: DeserializeOwned, B: Serialize>(&self, path: &str, body: &B) -> Result<T> {
-        let url = self.url(path);
-        debug!(%url, "portal-client POST");
-        match self.agent.post(&url).send_json(serde_json::to_value(body)?) {
-            Ok(response) => {
-                let parsed: T = response
-                    .into_json()
-                    .with_context(|| format!("decoding JSON response from {url}"))?;
-                Ok(parsed)
-            }
-            Err(ureq::Error::Status(code, response)) => {
-                let body = response.into_string().unwrap_or_default();
-                Err(anyhow!("{url} returned HTTP {code}: {body}"))
-            }
-            Err(e) => Err(anyhow!("portal transport error · {url}: {e}")),
-        }
-    }
-
-    /// Convenience · submit an ActionEnvelope to its destination endpoint.
-    /// Returns the portal's response body parsed as T. The path is
-    /// caller-supplied because each action type lands at a distinct
-    /// endpoint (charter → /api/operator/charter, payouts →
-    /// /api/operator/payouts/claim, etc.).
-    pub fn submit_envelope<T: DeserializeOwned>(
-        &self,
-        path: &str,
-        envelope: &ActionEnvelope,
-    ) -> Result<T> {
-        self.post_json(path, envelope)
     }
 }
 

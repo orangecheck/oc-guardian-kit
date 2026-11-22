@@ -41,6 +41,13 @@ surface (CLI flags, action-envelope schemas, file paths under
   and the kit's signer is held to it byte for byte, as oc-me-web's charter
   route is.
 
+### Removed
+
+- **`charter publish`.** The portal takes a charter signature only from a
+  signed-in account, so the file goes up on the federation's page at ochk.app.
+  The portal client only reads now; `fedimintd run`'s liveness reports are the
+  kit's one post to me.ochk.io.
+
 ## 0.2.13 — 2026-11-11
 
 ### Added

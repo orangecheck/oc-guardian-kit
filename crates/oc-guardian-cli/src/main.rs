@@ -64,7 +64,7 @@ enum Command {
     #[command(subcommand)]
     Ceremony(CeremonyCommand),
 
-    /// Charter fetch / sign / publish.
+    /// Charter fetch / sign.
     /// Bypass for portal §06 (charter).
     #[command(subcommand)]
     Charter(CharterCommand),
@@ -300,15 +300,6 @@ enum CharterCommand {
         /// only os-keychain end-to-end; other backends route there.
         #[arg(long, default_value = "os-keychain")]
         hsm: String,
-    },
-    /// POST a signed charter ratification to `/api/operator/charter`.
-    /// That route also asks for a signed-in ochk.app session, which
-    /// this command does not carry, so the portal refuses it today.
-    Publish {
-        #[arg(long)]
-        file: String,
-        #[arg(long, default_value = "https")]
-        transport: String,
     },
 }
 
@@ -613,9 +604,6 @@ fn main() -> Result<()> {
         Command::Charter(cmd) => match cmd {
             CharterCommand::Fetch { slug } => oc_guardian_charter::fetch(slug),
             CharterCommand::Sign { slug, out, hsm } => oc_guardian_charter::sign(slug, out, hsm),
-            CharterCommand::Publish { file, transport } => {
-                oc_guardian_charter::publish(file, transport)
-            }
         },
         Command::Fedimintd(cmd) => match cmd {
             FedimintdCommand::Install { version, dir } => {

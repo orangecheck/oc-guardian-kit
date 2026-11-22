@@ -160,7 +160,7 @@ oc-guardian charter sign <federation-slug> --out charter-sig.json
 
 `sign` reads the charter's exact text from the portal and hashes it itself. It signs only when that SHA-256 is the hash the portal names, and refuses a charter that serves no text (one stored before the portal kept it). The envelope names the hash, the version, the key's operator id, the time and a nonce, and expires an hour after it is signed.
 
-Upload `charter-sig.json` within that hour at `ochk.app/me/operator/federations/<slug>` ("Signed with the guardian kit? Upload the file"), signed in to the account your key is bound to (§02). The server checks the signature, that your key holds a seat, and that the hash is the charter it publishes now. `oc-guardian charter publish` sends the file without that session, so the portal refuses it.
+Upload `charter-sig.json` within that hour at `ochk.app/me/operator/federations/<slug>` ("Signed with the guardian kit? Upload the file"), signed in to the account your key is bound to (§02). The server checks the signature, that your key holds a seat, and that the hash is the charter it publishes now.
 
 The charter signature is an Ed25519 signature over the canonical charter; it is the same bytes however it travels.
 

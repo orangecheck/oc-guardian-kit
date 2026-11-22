@@ -1,4 +1,4 @@
-//! Federation charter primitives — fetch, hash, sign, publish.
+//! Federation charter primitives — fetch, hash, sign.
 //!
 //! The charter is the artifact a federation publishes disclosing its
 //! guardians, threshold, operational commitments, and exit clause.
@@ -15,12 +15,11 @@
 //! at ochk.app, signed in to the account the key is bound to.
 //!
 //! This crate implements the kit-side of BYPASS.md §06 (charter
-//! fetch / sign / publish).
+//! fetch / sign).
 //!
 //! ```text
-//! oc-guardian charter fetch <slug>          # see what would be signed
-//! oc-guardian charter sign <slug>           # produce charter-sig.json
-//! oc-guardian charter publish --file <path> # POST, no session: refused
+//! oc-guardian charter fetch <slug>   # see what would be signed
+//! oc-guardian charter sign <slug>    # produce charter-sig.json
 //! ```
 
 use std::fs;
@@ -249,40 +248,6 @@ pub fn sign(slug: String, out: String, hsm: String) -> Result<()> {
     println!();
     println!("upload it at ochk.app/me/operator/federations/{slug}, signed in to the account");
     println!("this key is bound to (oc-guardian bind), within the hour.");
-    Ok(())
-}
-
-/// `oc-guardian charter publish --file <path>` · read a previously-
-/// signed charter envelope and POST it to the portal. Idempotent at
-/// the portal layer · re-publishing the same envelope returns the
-/// same signature row.
-pub fn publish(file: String, transport: String) -> Result<()> {
-    if transport != "https" {
-        return Err(anyhow!(
-            "transport `{transport}` not yet supported · v0.2 ships `https` only"
-        ));
-    }
-    let raw = fs::read_to_string(&file).with_context(|| format!("read envelope file {file}"))?;
-    let envelope: ActionEnvelope =
-        serde_json::from_str(&raw).context("parse envelope · not a valid ActionEnvelope JSON")?;
-    if !matches!(envelope.payload.action, ActionType::CharterSign) {
-        return Err(anyhow!(
-            "envelope action is `{:?}`, expected `charter-sign`",
-            envelope.payload.action
-        ));
-    }
-
-    info!(
-        "publishing charter signature to portal (federation={:?}, nonce={})",
-        envelope.payload.federation, envelope.payload.nonce
-    );
-
-    let client = PortalClient::from_env(None);
-    let response: serde_json::Value = client
-        .submit_envelope("/api/operator/charter", &envelope)
-        .with_context(|| format!("POST envelope from {file}"))?;
-    println!("portal accepted the signature");
-    println!("{}", serde_json::to_string_pretty(&response)?);
     Ok(())
 }
 
