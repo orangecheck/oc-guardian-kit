@@ -134,11 +134,13 @@ jobs:
           files: dist/oc-guardian-*
           fail_on_unmatched_files: true
           generate_release_notes: true
+          # A tag with a pre-release part (v0.3.0-rc.1) is never the release
+          # operators get as "latest".
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}
 
   # Build + publish the guardian Docker image OrangeCheck deploys to Fly.
-  # The image bundles a pinned, SHA-256-verified fedimintd; the build
-  # fails unless the verified hash is supplied (repo variable
-  # FEDIMINTD_SHA256, pinned to FEDIMINTD_VERSION).
+  # The image bundles the fedimintd the Dockerfile pins, SHA-256-verified.
   docker:
     name: guardian image · ghcr.io
     if: github.event_name == 'push'
@@ -152,13 +154,16 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: derive image tag
+      - name: derive image tags
         id: meta
-        run: echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-      - name: verify fedimintd hash is pinned
+        # A pre-release image gets its own tag only, never :latest.
         run: |
-          test -n "${{ vars.FEDIMINTD_SHA256 }}" \
-            || (echo "::error::set repo variable FEDIMINTD_SHA256 to the verified upstream fedimintd hash before releasing an image"; exit 1)
+          {
+            echo "tags<<EOF"
+            echo "ghcr.io/orangecheck/oc-guardian:${GITHUB_REF_NAME}"
+            case "$GITHUB_REF_NAME" in *-*) ;; *) echo "ghcr.io/orangecheck/oc-guardian:latest" ;; esac
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
       - name: build + push
         id: build
         uses: docker/build-push-action@v6
@@ -168,12 +173,7 @@ jobs:
           # Fly machines + the upstream fedimintd .deb are amd64; pin it so
           # the published image always matches the deploy target.
           platforms: linux/amd64
-          tags: |
-            ghcr.io/orangecheck/oc-guardian:${{ steps.meta.outputs.tag }}
-            ghcr.io/orangecheck/oc-guardian:latest
-          build-args: |
-            FEDIMINTD_VERSION=${{ vars.FEDIMINTD_VERSION || '0.11.4' }}
-            FEDIMINTD_SHA256=${{ vars.FEDIMINTD_SHA256 }}
+          tags: ${{ steps.meta.outputs.tags }}
       - name: install cosign
         uses: sigstore/cosign-installer@v3
       - name: cosign keyless sign the image

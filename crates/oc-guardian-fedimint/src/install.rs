@@ -36,10 +36,17 @@ pub struct PinnedRelease {
 /// (Hashes are pinned per release in the release PR; the Fly image's
 /// bundled fedimintd is the validated production path.)
 pub const PINNED_RELEASES: &[PinnedRelease] = &[
-    // v0.11.4 · the upstream linux x86_64 self-contained `fedimintd-v*`
+    // v0.13.0 · the upstream linux x86_64 self-contained `fedimintd-v*`
     // executable. SHA-256 verified against the GitHub release artifact
-    // (2026-10-21). The Fly image installs the .deb instead (see
+    // (2026-11-23). The Fly image installs the .deb instead (see
     // Dockerfile); this raw binary is the bare-metal install path.
+    PinnedRelease {
+        version: "0.13.0",
+        url: "https://github.com/fedimint/fedimint/releases/download/v0.13.0/fedimintd-v0.13.0",
+        sha256_hex: "b663d1c7316337c67af1296338ffdf90ea0c8f2491b45e0c75f0fed81014c897",
+    },
+    // v0.11.4 · kept for a guardian joining the DKG of a federation whose
+    // other guardians still run 0.11 (DKG needs one major.minor on all).
     PinnedRelease {
         version: "0.11.4",
         url: "https://github.com/fedimint/fedimint/releases/download/v0.11.4/fedimintd-v0.11.4",
@@ -155,6 +162,21 @@ mod tests {
             !bin_path(&dir).exists(),
             "must not write an unverified binary"
         );
+    }
+
+    #[test]
+    fn installs_0_13_0_and_keeps_0_11_4() {
+        let new = lookup("0.13.0").expect("0.13.0 is pinned");
+        assert!(
+            new.url.ends_with("/v0.13.0/fedimintd-v0.13.0"),
+            "{}",
+            new.url
+        );
+        assert_eq!(
+            new.sha256_hex,
+            "b663d1c7316337c67af1296338ffdf90ea0c8f2491b45e0c75f0fed81014c897"
+        );
+        assert!(lookup("0.11.4").is_some());
     }
 
     #[test]
