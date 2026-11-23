@@ -38,7 +38,8 @@ pub fn resolve_binary(hint: &str) -> PathBuf {
 
 /// What an un-set-up guardian exposes. Until DKG writes its config,
 /// fedimintd's setup API answers on the API bind and the setup UI on the
-/// UI bind, and the first caller of `set_local_params` sets the password.
+/// UI bind. On 0.11 the first caller of `set_local_params` sets the
+/// password; from 0.12 a caller needs the one fedimintd started with.
 pub fn setup_exposure(rt: &FedimintdRuntime) -> Vec<String> {
     if rt.is_set_up() {
         return Vec::new();
@@ -86,6 +87,38 @@ pub fn probe_version(bin: &PathBuf) -> String {
     }
 }
 
+/// From 0.12 fedimintd takes its admin password only from FM_PASSWORD_API.
+/// A version that does not parse is not refused here.
+pub fn needs_admin_password(version: &str) -> bool {
+    let mut parts = version.trim_start_matches('v').split('.');
+    let major = parts.next().and_then(|p| p.parse::<u64>().ok());
+    let minor = parts
+        .next()
+        .and_then(|p| p.split(|c: char| !c.is_ascii_digit()).next())
+        .and_then(|p| p.parse::<u64>().ok());
+    matches!((major, minor), (Some(major), Some(minor)) if major > 0 || minor >= 12)
+}
+
+/// Refuses a start without the guardian password on a fedimintd that would
+/// then answer no admin call; on older ones it only warns.
+pub fn check_admin_password(rt: &FedimintdRuntime, version: &str) -> Result<()> {
+    if rt.guardian_password.is_some() {
+        return Ok(());
+    }
+    if needs_admin_password(version) {
+        bail!(
+            "fedimintd {version} answers no admin call, the key ceremony's included, without \
+             the guardian password · set OC_GUARDIAN_SETUP_PASSWORD (the setup gate) or \
+             FM_PASSWORD, and the kit passes it to fedimintd as FM_PASSWORD_API"
+        );
+    }
+    warn!(
+        "no guardian password given (OC_GUARDIAN_SETUP_PASSWORD or FM_PASSWORD) · fedimintd \
+         0.12 and later serve no admin calls without FM_PASSWORD_API, which the kit sets from it"
+    );
+    Ok(())
+}
+
 /// Entrypoint: supervise fedimintd forever. `bin_hint` is the optional
 /// `--config` value from the CLI (treated as a fedimintd binary path
 /// override; empty → resolve from PATH).
@@ -94,14 +127,9 @@ pub fn run(bin_hint: String, allow_public_setup: bool) -> Result<()> {
     std::fs::create_dir_all(&rt.data_dir)
         .with_context(|| format!("creating data dir {}", rt.data_dir.display()))?;
     rt.check_password_file()?;
-    if rt.guardian_password.is_none() {
-        warn!(
-            "no guardian password given (OC_GUARDIAN_SETUP_PASSWORD or FM_PASSWORD) · fedimintd \
-             0.12 and later serve no admin calls without FM_PASSWORD_API, which the kit sets from it"
-        );
-    }
     let bin = resolve_binary(&bin_hint);
     let version = probe_version(&bin);
+    check_admin_password(&rt, &version)?;
     info!(
         bin = %bin.display(),
         version,
@@ -359,5 +387,27 @@ mod tests {
         std::fs::write(dir.join("consensus.json"), "{}").unwrap();
         assert!(setup_exposure(&r).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_start_without_the_password_is_refused_from_fedimintd_0_12() {
+        let mut r = rt();
+        assert!(r.guardian_password.is_none());
+        let err = check_admin_password(&r, "0.13.0").unwrap_err().to_string();
+        assert!(err.contains("FM_PASSWORD_API"), "{err}");
+        assert!(check_admin_password(&r, "0.11.4").is_ok());
+        assert!(check_admin_password(&r, "unknown").is_ok());
+        r.guardian_password = Some(SetupPassword("g-pw".into()));
+        assert!(check_admin_password(&r, "0.13.0").is_ok());
+    }
+
+    #[test]
+    fn a_password_is_required_from_fedimintd_0_12() {
+        for v in ["0.12.0", "0.13.0", "v0.13.0", "0.13.1-rc.0", "1.0.0"] {
+            assert!(needs_admin_password(v), "{v}");
+        }
+        for v in ["0.11.4", "0.11.0-beta.1", "0.9.9", "unknown", "", "0"] {
+            assert!(!needs_admin_password(v), "{v}");
+        }
     }
 }
