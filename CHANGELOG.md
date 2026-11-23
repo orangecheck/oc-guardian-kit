@@ -6,6 +6,26 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
+## 0.3.0 — 2026-11-23
+
+### Changed
+
+- **The image and `fedimintd install` run fedimintd 0.13.0.** The Dockerfile
+  pins the 0.13.0 `.deb` by SHA-256, and the release build uses that pin.
+  `fedimintd install --version 0.11.4` stays pinned for a guardian that joins
+  the key ceremony of a federation whose other guardians run 0.11.
+- **A new federation needs one fedimintd `major.minor` on every guardian**, so
+  guardians on kit 0.3 and kit 0.2 cannot set one up together. A federation
+  that already runs upgrades one guardian at a time.
+- **Every start pins every module.** `FM_ENABLE_MODULE_LNV2=true` and
+  `FM_IROH_NEXT_ENABLE=false` join the settings from 0.2.14, because 0.13
+  turns LNv1 and the v1 mint and wallet off by default.
+- **`fedimintd run` will not start fedimintd 0.12 or later without the
+  guardian password**, which that fedimintd needs for every admin call, the
+  key ceremony's included. With 0.11 it still warns and starts.
+- A release tag with a `-` (`v0.3.0-rc.1`) is published as a GitHub
+  prerelease, and its image gets no `:latest` tag.
+
 ## 0.2.14 — 2026-11-23
 
 ### Added
