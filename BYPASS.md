@@ -126,7 +126,7 @@ This reads the public federation directory at `me.ochk.io/api/federations` (no a
 
 **Portal path:** for seats orangecheck hosts, the portal calls each guardian's setup API in turn.
 
-**Bypass:** on a guardian you run, the kit makes the same four calls to fedimintd 0.11's setup API on that machine. The password comes from `--password-file` or `FM_PASSWORD` and never crosses the network.
+**Bypass:** on a guardian you run, the kit makes the same four calls to fedimintd's setup API on that machine. The password comes from `--password-file` or `FM_PASSWORD` and never crosses the network.
 
 ```sh
 # Each guardian: name and password. The leader also names the federation and its size.
@@ -173,7 +173,7 @@ The charter signature is an Ed25519 signature over the canonical charter; it is 
 **Bypass:** install the kit (README §Install), then:
 
 ```sh
-oc-guardian fedimintd install --version 0.11.4 --dir /usr/local/bin   # pinned, hash-checked
+oc-guardian fedimintd install --version 0.13.0 --dir /usr/local/bin   # pinned, hash-checked
 oc-guardian fedimintd run --config /usr/local/bin/fedimintd           # --config is the fedimintd binary
 ```
 

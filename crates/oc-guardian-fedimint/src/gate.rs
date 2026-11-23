@@ -1,8 +1,10 @@
 //! The setup gate.
 //!
-//! Until DKG is done, fedimintd 0.11 serves an unauthenticated setup API on
-//! its API port: whoever first calls `set_local_params` sets the guardian's
-//! password. It also forgets local params whenever it restarts. So while a
+//! Until DKG is done, fedimintd serves its setup API on its API port. On
+//! 0.11 it is unauthenticated, and whoever first calls `set_local_params`
+//! sets the guardian's password; from 0.12 it answers only to the password
+//! fedimintd was started with. Either way it forgets local params whenever
+//! it restarts, and the setup UI sits beside it. So while a
 //! guardian with `OC_GUARDIAN_SETUP_PASSWORD` has no consensus config, the
 //! kit keeps fedimintd's API on loopback and answers the public API bind
 //! itself, passing on a JSON-RPC call only if it carries that password.

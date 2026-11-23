@@ -2,15 +2,16 @@
 //!
 //! Each guardian submits the whole meta object, and it becomes consensus only
 //! once a threshold of guardians submit the same bytes (fedimint 0.11
-//! `fedimint-meta-server`). So this builds the object in one canonical form:
-//! what the federation publishes now, plus the three fields a successor notice
-//! sets, keys sorted at every level, no whitespace. Guardians who run it with
-//! the same inputs submit identical bytes.
+//! through 0.13 `fedimint-meta-server`). So this builds the object in one
+//! canonical form: what the federation publishes now, plus the three fields
+//! a successor notice sets, keys sorted at every level, no whitespace.
+//! Guardians who run it with the same inputs submit identical bytes.
 //!
 //! The values are encoded as upstream's guardian dashboard writes them
-//! (`fedimint-server-ui` meta module, v0.11.4): `federation_successor` and
-//! `welcome_message` as strings, `federation_expiry_timestamp` as a string of
-//! base-10 Unix seconds (docs/meta_fields/).
+//! (`fedimint-server-ui` meta module, the same in v0.11.4 and v0.13.0):
+//! `federation_successor` and `welcome_message` as strings,
+//! `federation_expiry_timestamp` as a string of base-10 Unix seconds
+//! (docs/meta_fields/).
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -263,7 +264,7 @@ fn polymod(values: &[u8]) -> u32 {
 mod tests {
     use super::*;
 
-    /// fedimint v0.11.4, fedimint-core/src/invite_code.rs `test_invite_code_to_from_string`.
+    /// fedimint v0.11.4 fedimint-core/src/invite_code.rs, unchanged in v0.13.0's invite_code/tests.rs.
     const UPSTREAM_INVITE: &str = "fed11qgqpu8rhwden5te0vejkg6tdd9h8gepwd4cxcumxv4jzuen0duhsqqfqh6nl7sgk72caxfx8khtfnn8y436q3nhyrkev3qp8ugdhdllnh86qmp42pm";
     const NOW: u64 = 1_793_000_000;
 

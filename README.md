@@ -82,7 +82,7 @@ FM_PASSWORD=… oc-guardian ceremony start --name <your-guardian-name>
 
 ## Running fedimintd
 
-`oc-guardian fedimintd run` supervises a `fedimintd` 0.11 process: it starts it, restarts it with backoff, and sends signed liveness reports. `--config` is the path of the `fedimintd` binary to run; without it, `fedimintd` is taken from `PATH`. `oc-guardian fedimintd install --version 0.11.4 [--dir <dir>]` downloads a pinned, hash-checked release.
+`oc-guardian fedimintd run` supervises a `fedimintd` process (0.13; 0.11 also runs): it starts it, restarts it with backoff, and sends signed liveness reports. `--config` is the path of the `fedimintd` binary to run; without it, `fedimintd` is taken from `PATH`. `oc-guardian fedimintd install --version 0.13.0 [--dir <dir>]` downloads a pinned, hash-checked release. `--version 0.11.4` is pinned too, for a guardian that joins the key ceremony of a new federation whose other guardians run 0.11.
 
 Settings come from the environment:
 
@@ -100,9 +100,9 @@ Settings come from the environment:
 | `FM_PASSWORD` | no | the guardian password without the setup gate, the same variable `ceremony` reads. Set both and they must match. |
 | `OC_GUARDIAN_NAME`, and on the leader `OC_FEDERATION_NAME` + `OC_FEDERATION_SIZE` | no | with the setup password: the kit sets this guardian's local params itself |
 
-The kit hands the guardian password (`OC_GUARDIAN_SETUP_PASSWORD`, else `FM_PASSWORD`) to fedimintd as `FM_PASSWORD_API` and `FM_PASSWORD_UI`: fedimintd 0.12 and later take the admin password from those, and 0.11 ignores them. Once a guardian is set up, `fedimintd run` refuses to start if that password differs from the one fedimintd keeps in `<FM_DATA_DIR>/password.private`.
+The kit hands the guardian password (`OC_GUARDIAN_SETUP_PASSWORD`, else `FM_PASSWORD`) to fedimintd as `FM_PASSWORD_API` and `FM_PASSWORD_UI`: fedimintd 0.12 and later answer admin calls only with that password, and 0.11 ignores them. A guardian set up on 0.11 also keeps its password in `<FM_DATA_DIR>/password.private`, and 0.13 reads that file to open the guardian's key share, so keep it when you upgrade. On such a guardian, `fedimintd run` refuses to start if the password differs from the file's.
 
-Every start also sets what a federation set up through the kit runs: `FM_ENABLE_IROH=false` (the TCP/TLS stack), `FM_ENABLE_MODULE_LNV1`, `FM_ENABLE_MODULE_MINT` and `FM_ENABLE_MODULE_WALLET` true, and `FM_ENABLE_MODULE_MINTV2` and `FM_ENABLE_MODULE_WALLETV2` false. LNv2 stays at fedimintd's default (on). fedimintd reads these only when DKG writes a new config, so they change nothing for a federation that already runs. They are fedimintd 0.11's own defaults, set here because 0.12 and later default to iroh and the v2 modules.
+Every start also sets what a federation set up through the kit runs: `FM_ENABLE_IROH=false` (the TCP/TLS stack), `FM_ENABLE_MODULE_LNV1`, `FM_ENABLE_MODULE_LNV2`, `FM_ENABLE_MODULE_MINT` and `FM_ENABLE_MODULE_WALLET` true, and `FM_ENABLE_MODULE_MINTV2` and `FM_ENABLE_MODULE_WALLETV2` false. fedimintd reads these only when DKG writes a new config, so they change nothing for a federation that already runs. They are fedimintd 0.11's own defaults, set here because 0.12 and later default to iroh and the v2 modules. It also sets `FM_IROH_NEXT_ENABLE=false`: 0.13's transitional iroh API, which a federation without iroh never starts.
 
 Without your own binds, P2P and the API listen on all interfaces (peers and clients need them), and the **setup UI listens on 127.0.0.1 only**. The API URL is `ws://` for a loopback host and `wss://` otherwise (behind TLS); set `FM_API_URL` for anything else.
 
@@ -133,7 +133,9 @@ exec "$LD" --library-path "$(dirname "$LD"):$(ls -d "$S"/*/lib | tr '\n' ':')" "
 
 ## The DKG ceremony
 
-fedimintd 0.11 sets a federation up in four steps. The kit takes them through the setup API on the same machine, so the guardian password never crosses the network. The password comes from `--password-file` or `FM_PASSWORD`.
+fedimintd sets a federation up in four steps. The kit takes them through the setup API on the same machine, so the guardian password never crosses the network. The password comes from `--password-file` or `FM_PASSWORD`.
+
+Every guardian of a new federation runs the same fedimintd `major.minor`: a 0.13 guardian refuses the setup code of a 0.11 one. So guardians on kit 0.3 (fedimintd 0.13) and on kit 0.2 (0.11) cannot set a federation up together. A federation that already runs is not affected, and upgrades one guardian at a time.
 
 ```sh
 # Every guardian: name and password. The leader also names the federation and its size.
@@ -184,7 +186,7 @@ Only these commands call `me.ochk.io` (or `OC_PORTAL_BASE`): `register`, `verify
 ## Two fedimint behaviours to know
 
 - After DKG, fedimintd publishes its API address to public pkarr relays unless `FM_PKARR_ENABLE=false`.
-- The fedimint 0.11.4 client watches for deposits through Esplora only. Point it at one with `FM_DEFAULT_BITCOIN_RPC_KIND=esplora` and `FM_DEFAULT_BITCOIN_RPC_URL=<esplora url>`.
+- The fedimint client (0.11.4 and 0.13.0) watches for deposits through Esplora only. Point it at one with `FM_DEFAULT_BITCOIN_RPC_KIND=esplora` and `FM_DEFAULT_BITCOIN_RPC_URL=<esplora url>`.
 
 ## What is not built yet
 

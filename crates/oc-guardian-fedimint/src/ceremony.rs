@@ -1,7 +1,7 @@
-//! DKG ceremony, driven through fedimintd 0.11's setup API on this machine.
+//! DKG ceremony, driven through fedimintd's setup API on this machine.
 //!
-//! fedimintd 0.11 sets a federation up in four steps, the same ones its
-//! setup UI and the portal take:
+//! fedimintd (0.11 through 0.13) sets a federation up in four steps, the
+//! same ones its setup UI and the portal take:
 //!
 //!   start    · `set_local_params`: this guardian's name and password (the
 //!              leader also names the federation and its size). Returns
@@ -12,8 +12,9 @@
 //!              invite code.
 //!
 //! The kit calls the API over this machine's own address for it, so the
-//! password never crosses the network. Until `start` has run, whoever
-//! reaches the setup API first sets the password: run it as soon as the
+//! password never crosses the network. From 0.12 every step needs the
+//! password fedimintd was started with (`FM_PASSWORD_API`). On 0.11,
+//! whoever reaches the setup API first sets it: run `start` as soon as the
 //! guardian boots.
 
 use std::path::{Path, PathBuf};
