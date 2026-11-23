@@ -6,7 +6,7 @@ versioning follows [SemVer](https://semver.org/) for the public
 surface (CLI flags, action-envelope schemas, file paths under
 `~/.config/oc-guardian/`).
 
-## Unreleased
+## 0.2.14 — 2026-11-23
 
 ### Added
 
@@ -40,6 +40,15 @@ surface (CLI flags, action-envelope schemas, file paths under
 - `test-fixtures/operator-signature-vectors.json` holds a charter signature,
   and the kit's signer is held to it byte for byte, as oc-me-web's charter
   route is.
+
+### Changed
+
+- **A charter names each seat by handle, key and contact.** `CHARTER-FORMAT.md`
+  and the questionnaire show a seat's `handle` and `operator_pubkey` in place
+  of a legal entity, jurisdiction and PGP fingerprint, as the portal's charters
+  do, and a registry entry carries no `jurisdiction`.
+- The README sends an application through ochk.app and links the guardian page
+  (ochk.app/guardians) and the test stack.
 
 ### Removed
 
