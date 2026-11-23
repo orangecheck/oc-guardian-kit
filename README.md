@@ -135,7 +135,7 @@ exec "$LD" --library-path "$(dirname "$LD"):$(ls -d "$S"/*/lib | tr '\n' ':')" "
 
 fedimintd sets a federation up in four steps. The kit takes them through the setup API on the same machine, so the guardian password never crosses the network. The password comes from `--password-file` or `FM_PASSWORD`.
 
-Every guardian of a new federation runs the same fedimintd `major.minor`: a 0.13 guardian refuses the setup code of a 0.11 one. So guardians on kit 0.3 (fedimintd 0.13) and on kit 0.2 (0.11) cannot set a federation up together. A federation that already runs is not affected, and upgrades one guardian at a time.
+Every guardian of a new federation runs the same fedimintd `major.minor`: a 0.13 guardian refuses the setup code of a 0.11 one. So guardians on kit 0.3 (fedimintd 0.13) and on kit 0.2 (0.11) cannot set a federation up together. A federation that already runs is not affected, and upgrades one guardian at a time: 0.11 and 0.13 guardians keep consensus together. Stop the next guardian only after the last one logs `Starting Consensus Engine`. Two of four guardians out stops consensus. A restarted guardian on a bitcoind backend waits until bitcoind reports itself synced (`verificationprogress` of 0.999 or more), and logs `Waiting for bitcoin backend to sync` until then.
 
 ```sh
 # Every guardian: name and password. The leader also names the federation and its size.

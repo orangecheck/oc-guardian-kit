@@ -16,7 +16,9 @@ surface (CLI flags, action-envelope schemas, file paths under
   the key ceremony of a federation whose other guardians run 0.11.
 - **A new federation needs one fedimintd `major.minor` on every guardian**, so
   guardians on kit 0.3 and kit 0.2 cannot set one up together. A federation
-  that already runs upgrades one guardian at a time.
+  that already runs upgrades one guardian at a time, since 0.11 and 0.13
+  guardians keep consensus together. Stop the next guardian only after the
+  last one logs `Starting Consensus Engine` (README, "The DKG ceremony").
 - **Every start pins every module.** `FM_ENABLE_MODULE_LNV2=true` and
   `FM_IROH_NEXT_ENABLE=false` join the settings from 0.2.14, because 0.13
   turns LNv1 and the v1 mint and wallet off by default.

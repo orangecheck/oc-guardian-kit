@@ -19,7 +19,14 @@ moves together when that pin changes, and what to check on the way.
   From 0.12, a new federation otherwise gets iroh and the v2 modules only.
 - DKG needs one fedimintd `major.minor` on every guardian (0.12: the same
   release). A new federation's guardians, hosted ones included, all run the
-  same kit line. A running federation upgrades one guardian at a time.
+  same kit line. A running federation upgrades one guardian at a time, and
+  0.11 and 0.13 guardians keep consensus together.
+- A restarted guardian takes part in consensus only after it logs
+  `Starting Consensus Engine`. On a bitcoind backend it first waits for
+  bitcoind's `verificationprogress` to reach 0.999 (both 0.11 and 0.13).
+  Until then its API answers, and fedimintd's status reports consensus
+  running with every peer flagged. Stop the next guardian only after that
+  line: two of four guardians out stops consensus.
 
 ## Pins to move, in this repository
 
@@ -52,8 +59,8 @@ moves together when that pin changes, and what to check on the way.
 - Run the onboarding examples' `guardian/local-federation.sh` with the new
   kit and the new fedimintd: four guardians, the ceremony, a client join, on
   the new client and on the oldest client still in use (the executor's).
-- Upgrade a running local federation one guardian at a time and watch
-  consensus continue.
+- Upgrade a running local federation one guardian at a time, with a block
+  mined every minute, and watch a session close in each mixed state.
 - Read each fedimintd's environment from `/proc/<pid>/environ` and its
   log: the settings above and both passwords present, no "invalid" warning,
   no restart.
