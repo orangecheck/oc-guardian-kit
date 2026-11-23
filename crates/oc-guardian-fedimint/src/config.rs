@@ -36,21 +36,25 @@ pub const DEFAULT_UI_PORT: u16 = 8175;
 pub const BITCOIN_NETWORKS: &[&str] = &["bitcoin", "testnet", "testnet4", "signet", "regtest"];
 
 /// What a federation set up through the kit runs: the TCP/TLS stack, and
-/// the v1 mint, wallet and Lightning modules beside LNv2 (left at
-/// fedimintd's default). fedimintd reads these only when DKG writes a new
-/// config, so the kit sets them on every start, whatever the version's own
-/// defaults are.
+/// the v1 mint, wallet and Lightning modules beside LNv2. fedimintd reads
+/// these only when DKG writes a new config, so the kit sets them on every
+/// start, whatever the version's own defaults are. `FM_IROH_NEXT_ENABLE`
+/// switches 0.13's transitional iroh API, read on every start; it stays off
+/// whatever a later default says (0.11 does not know the name).
 pub const FEDERATION_DEFAULTS: &[(&str, &str)] = &[
     ("FM_ENABLE_IROH", "false"),
+    ("FM_IROH_NEXT_ENABLE", "false"),
     ("FM_ENABLE_MODULE_LNV1", "true"),
+    ("FM_ENABLE_MODULE_LNV2", "true"),
     ("FM_ENABLE_MODULE_MINT", "true"),
     ("FM_ENABLE_MODULE_WALLET", "true"),
     ("FM_ENABLE_MODULE_MINTV2", "false"),
     ("FM_ENABLE_MODULE_WALLETV2", "false"),
 ];
 
-/// Where fedimintd 0.11 keeps the guardian password once DKG is done. It
-/// reads it back on every start.
+/// Where a guardian set up on fedimintd 0.11 keeps its password. 0.13 reads
+/// it on every start to open that guardian's encrypted private config; a
+/// guardian set up on 0.12 or later has no such file.
 pub const PASSWORD_FILE: &str = "password.private";
 
 /// fedimintd's Bitcoin data source. fedimintd MANDATES one (it refuses
@@ -289,8 +293,8 @@ impl FedimintdRuntime {
     }
 
     /// True once DKG has written this guardian's consensus config. Until
-    /// then fedimintd's setup API answers on the API bind, and whoever
-    /// calls `set_local_params` first sets the guardian's password.
+    /// then fedimintd's setup API answers on the API bind, to the admin
+    /// password fedimintd was started with.
     pub fn is_set_up(&self) -> bool {
         self.data_dir.join("consensus.json").exists()
     }
@@ -546,11 +550,13 @@ mod tests {
     }
 
     #[test]
-    fn every_start_sets_tcp_and_the_v1_modules_and_leaves_lnv2_alone() {
+    fn every_start_sets_tcp_and_every_module_the_federation_runs() {
         let env = rt(&base()).fedimintd_env();
         for (k, v) in [
             ("FM_ENABLE_IROH", "false"),
+            ("FM_IROH_NEXT_ENABLE", "false"),
             ("FM_ENABLE_MODULE_LNV1", "true"),
+            ("FM_ENABLE_MODULE_LNV2", "true"),
             ("FM_ENABLE_MODULE_MINT", "true"),
             ("FM_ENABLE_MODULE_WALLET", "true"),
             ("FM_ENABLE_MODULE_MINTV2", "false"),
@@ -558,7 +564,6 @@ mod tests {
         ] {
             assert_eq!(env.get(k).map(String::as_str), Some(v), "{k}");
         }
-        assert!(!env.contains_key("FM_ENABLE_MODULE_LNV2"));
         assert!(!env.contains_key("FM_PASSWORD_API"));
         assert!(!env.contains_key("FM_PASSWORD_UI"));
     }
