@@ -124,11 +124,21 @@ pub fn check_admin_password(rt: &FedimintdRuntime, version: &str) -> Result<()> 
 /// override; empty → resolve from PATH).
 pub fn run(bin_hint: String, allow_public_setup: bool) -> Result<()> {
     let rt = FedimintdRuntime::from_env().context("resolving fedimintd runtime from env")?;
+    let bin = resolve_binary(&bin_hint);
+    let version = probe_version(&bin);
+    start(rt, bin, version, allow_public_setup)
+}
+
+/// Everything `run` does once the runtime and fedimintd's version are known.
+fn start(
+    rt: FedimintdRuntime,
+    bin: PathBuf,
+    version: String,
+    allow_public_setup: bool,
+) -> Result<()> {
     std::fs::create_dir_all(&rt.data_dir)
         .with_context(|| format!("creating data dir {}", rt.data_dir.display()))?;
     rt.check_password_file()?;
-    let bin = resolve_binary(&bin_hint);
-    let version = probe_version(&bin);
     check_admin_password(&rt, &version)?;
     info!(
         bin = %bin.display(),
@@ -399,6 +409,24 @@ mod tests {
         assert!(check_admin_password(&r, "unknown").is_ok());
         r.guardian_password = Some(SetupPassword("g-pw".into()));
         assert!(check_admin_password(&r, "0.13.0").is_ok());
+    }
+
+    #[test]
+    fn the_guardian_does_not_start_fedimintd_0_13_without_the_password() {
+        let dir = std::env::temp_dir().join(format!("oc-kit-start-pw-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut r = rt();
+        r.data_dir = dir.clone();
+        assert!(r.guardian_password.is_none());
+        // Its API binds all interfaces, so a start that skipped the password
+        // check would stop on the open setup API instead, with another error.
+        assert!(!setup_exposure(&r).is_empty());
+        let bin = PathBuf::from("/nonexistent/fedimintd");
+        let err = start(r, bin, "0.13.0".into(), false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("FM_PASSWORD_API"), "{err}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
