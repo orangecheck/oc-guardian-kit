@@ -37,7 +37,7 @@ Build-from-source install:
 ```sh
 git clone https://github.com/orangecheck/oc-guardian-kit
 cd oc-guardian-kit
-git checkout "$(git describe --tags --abbrev=0)"  # the latest release
+git checkout "$(git describe --tags --abbrev=0 --exclude '*-*')"  # the latest release, never a pre-release
 cargo build --release --locked -p oc-guardian-cli  # dependency versions pinned by Cargo.lock
 sudo install target/release/oc-guardian /usr/local/bin/
 ```
@@ -96,8 +96,8 @@ Settings come from the environment:
 | `OC_ATTEST_KEY_HEX` | on orangecheck-hosted hardware | the machine's own attestation key, 32 bytes as hex, which signs its liveness reports in place of the operator key a hosted machine never holds. The reports count for the seat only while the seat's operator has signed a delegation to its public key (`oc-guardian attest-delegate`, BYPASS.md §14). The key never prints. |
 | `OC_P2P_PORT`, `OC_API_PORT`, `OC_UI_PORT` | no | 9000, 9001, 8175 |
 | `FM_BIND_P2P`, `FM_BIND_API`, `FM_BIND_UI`, `FM_P2P_URL`, `FM_API_URL`, `FM_DATA_DIR` | no | fedimintd's own settings. Set them and the kit passes them through unchanged. |
-| `OC_GUARDIAN_SETUP_PASSWORD` | no | turns on the setup gate (below) until DKG is done |
-| `FM_PASSWORD` | no | the guardian password without the setup gate, the same variable `ceremony` reads. Set both and they must match. |
+| `OC_GUARDIAN_SETUP_PASSWORD` | one of the two, from fedimintd 0.12 (the kit runs 0.13) | turns on the setup gate (below) until DKG is done |
+| `FM_PASSWORD` | one of the two, from fedimintd 0.12 (the kit runs 0.13) | the guardian password without the setup gate, the same variable `ceremony` reads. Set both and they must match. |
 | `OC_GUARDIAN_NAME`, and on the leader `OC_FEDERATION_NAME` + `OC_FEDERATION_SIZE` | no | with the setup password: the kit sets this guardian's local params itself |
 
 The kit hands the guardian password (`OC_GUARDIAN_SETUP_PASSWORD`, else `FM_PASSWORD`) to fedimintd as `FM_PASSWORD_API` and `FM_PASSWORD_UI`: fedimintd 0.12 and later answer admin calls only with that password, and 0.11 ignores them. A guardian set up on 0.11 also keeps its password in `<FM_DATA_DIR>/password.private`, and 0.13 reads that file to open the guardian's key share, so keep it when you upgrade. On such a guardian, `fedimintd run` refuses to start if the password differs from the file's.
@@ -135,7 +135,7 @@ exec "$LD" --library-path "$(dirname "$LD"):$(ls -d "$S"/*/lib | tr '\n' ':')" "
 
 fedimintd sets a federation up in four steps. The kit takes them through the setup API on the same machine, so the guardian password never crosses the network. The password comes from `--password-file` or `FM_PASSWORD`.
 
-Every guardian of a new federation runs the same fedimintd `major.minor`: a 0.13 guardian refuses the setup code of a 0.11 one. So guardians on kit 0.3 (fedimintd 0.13) and on kit 0.2 (0.11) cannot set a federation up together. A federation that already runs is not affected, and upgrades one guardian at a time: 0.11 and 0.13 guardians keep consensus together. Stop the next guardian only after the last one logs `Starting Consensus Engine`. Two of four guardians out stops consensus. A restarted guardian on a bitcoind backend waits until bitcoind reports itself synced (`verificationprogress` of 0.999 or more), and logs `Waiting for bitcoin backend to sync` until then.
+Every guardian of a new federation runs the same fedimintd `major.minor`: a 0.13 guardian refuses the setup code of a 0.11 one. So guardians on kit 0.3 (fedimintd 0.13) and on kit 0.2 (0.11) cannot set a federation up together. A federation that already runs is not affected, and upgrades one guardian at a time: 0.11 and 0.13 guardians keep consensus together. Before a guardian first starts on 0.13, give the kit its guardian password, the one in `<FM_DATA_DIR>/password.private`, as `FM_PASSWORD` (or `OC_GUARDIAN_SETUP_PASSWORD`): the kit refuses to start 0.13 without it, or with any other. Stop the next guardian only after the last one logs `Starting Consensus Engine`. Two of four guardians out stops consensus. A restarted guardian on a bitcoind backend waits until bitcoind reports itself synced (`verificationprogress` of 0.999 or more), and logs `Waiting for bitcoin backend to sync` until then.
 
 ```sh
 # Every guardian: name and password. The leader also names the federation and its size.
